@@ -1,0 +1,394 @@
+/* global Office, Word, window, process, performance, console, URLSearchParams */
+
+// Wire your checker and expose globals the manifest calls.
+import {
+  checkDocumentText as runCheckVejice,
+  applyAllSuggestionsOnline,
+  rejectAllSuggestionsOnline,
+  isDocumentCheckInProgress,
+} from "../logic/preveriVejice.js";
+import { isWordOnline } from "../utils/host.js";
+import { publishTaskpaneNotifications, shouldUseToastFallback } from "../utils/notifications.js";
+
+const envIsProd = () =>
+  (typeof process !== "undefined" && process.env?.NODE_ENV === "production") ||
+  (typeof window !== "undefined" && window.__VEJICE_ENV__ === "production");
+const DEBUG_OVERRIDE =
+  typeof window !== "undefined" && typeof window.__VEJICE_DEBUG__ === "boolean"
+    ? window.__VEJICE_DEBUG__
+    : undefined;
+const DEBUG = typeof DEBUG_OVERRIDE === "boolean" ? DEBUG_OVERRIDE : !envIsProd();
+const log = (...a) => DEBUG && console.log("[Vejice CMD]", ...a);
+const errL = (...a) => console.error("[Vejice CMD]", ...a);
+const tnow = () => performance?.now?.() ?? Date.now();
+const TASKPANE_AUTOOPEN_SESSION_KEY = "vejice:autoopen-taskpane:v1";
+const done = (event, tag) => {
+  try {
+    event && event.completed && event.completed();
+  } catch (e) {
+    errL(`${tag}: event.completed() threw`, e);
+  }
+};
+let cmdToastDialog = null;
+const showCommandToast = (message) => {
+  if (!message) return;
+  publishTaskpaneNotifications([message], {
+    source: isWordOnline() ? "online-command" : "desktop-command",
+    level: "info",
+  });
+  if (!shouldUseToastFallback()) return;
+  if (typeof Office === "undefined" || !Office.context?.ui?.displayDialogAsync) return;
+  const origin =
+    (typeof window !== "undefined" && window.location && window.location.origin) || null;
+  if (!origin) return;
+  const toastUrl = new URL("toast.html", origin);
+  toastUrl.searchParams.set("message", message);
+  Office.context.ui.displayDialogAsync(
+    toastUrl.toString(),
+    { height: 20, width: 30, displayInIframe: true },
+    (asyncResult) => {
+      if (asyncResult.status !== Office.AsyncResultStatus.Succeeded) return;
+      if (cmdToastDialog) {
+        try {
+          cmdToastDialog.close();
+        } catch (_err) {
+          // ignore
+        }
+      }
+      cmdToastDialog = asyncResult.value;
+      const closeDialog = () => {
+        if (!cmdToastDialog) return;
+        try {
+          cmdToastDialog.close();
+        } catch (_err) {
+          // ignore
+        } finally {
+          cmdToastDialog = null;
+        }
+      };
+      cmdToastDialog.addEventHandler(Office.EventType.DialogMessageReceived, closeDialog);
+      cmdToastDialog.addEventHandler(Office.EventType.DialogEventReceived, closeDialog);
+    }
+  );
+};
+let isCheckRunning = false;
+let isCommandBusy = false;
+const CHECK_CLICK_DEBOUNCE_MS = 800;
+let lastCheckClickAt = 0;
+let ribbonUpdatesSupported = true;
+let ribbonSupportProbeDone = false;
+let ribbonUnavailableLogged = false;
+
+const isRibbonApiUnavailableError = (err) => {
+  const code = String(err?.code || "").toLowerCase();
+  const msg = String(err?.message || "").toLowerCase();
+  return (
+    code.includes("apinotfound") ||
+    code.includes("notsupported") ||
+    msg.includes("api you are trying to use is not available") ||
+    msg.includes("different scenario")
+  );
+};
+
+const syncRibbonButtonState = async () => {
+  if (!ribbonUpdatesSupported) return;
+  if (typeof Office === "undefined" || !Office?.ribbon?.requestUpdate) return;
+  if (!ribbonSupportProbeDone) {
+    ribbonSupportProbeDone = true;
+    try {
+      const supportsRibbonApi = Boolean(
+        Office?.context?.requirements?.isSetSupported?.("RibbonApi", "1.1")
+      );
+      if (!supportsRibbonApi) {
+        ribbonUpdatesSupported = false;
+        if (!ribbonUnavailableLogged) {
+          ribbonUnavailableLogged = true;
+          log("Ribbon state updates disabled: RibbonApi not supported in this host/scenario");
+        }
+        return;
+      }
+    } catch (_err) {
+      // Keep optimistic path; requestUpdate catch below will disable on failure.
+    }
+  }
+  const checkRunning = Boolean(isCheckRunning || isDocumentCheckInProgress?.());
+  const disableApplyButtons = Boolean(checkRunning || isCommandBusy);
+  try {
+    await Office.ribbon.requestUpdate({
+      tabs: [
+        {
+          id: "TabHome",
+          groups: [
+            {
+              id: "VejiceGroup",
+              controls: [
+                { id: "CheckVejice", enabled: true },
+                { id: "AcceptAll", enabled: !disableApplyButtons },
+                { id: "RejectAll", enabled: !disableApplyButtons },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+  } catch (err) {
+    if (isRibbonApiUnavailableError(err)) {
+      ribbonUpdatesSupported = false;
+      if (!ribbonUnavailableLogged) {
+        ribbonUnavailableLogged = true;
+        log("Ribbon state updates disabled:", err?.message || err);
+      }
+      return;
+    }
+    log("Ribbon state update skipped:", err?.message || err);
+  }
+};
+
+const tryAutoOpenTaskpane = async () => {
+  if (typeof Office === "undefined") return;
+  if (!Office?.addin?.showAsTaskpane) {
+    log("Auto-open taskpane skipped: Office.addin.showAsTaskpane not supported");
+    return;
+  }
+  if (typeof window === "undefined") return;
+  try {
+    const storage = window.sessionStorage;
+    if (storage && storage.getItem(TASKPANE_AUTOOPEN_SESSION_KEY) === "1") {
+      return;
+    }
+    await Office.addin.showAsTaskpane();
+    if (storage) {
+      storage.setItem(TASKPANE_AUTOOPEN_SESSION_KEY, "1");
+    }
+    log("Auto-opened taskpane");
+  } catch (err) {
+    errL("Auto-open taskpane failed:", err);
+  }
+};
+
+const revisionsApiSupported = () => {
+  try {
+    return Boolean(Office?.context?.requirements?.isSetSupported?.("WordApi", "1.3"));
+  } catch (err) {
+    errL("Failed to check requirement set support", err);
+    return false;
+  }
+};
+
+const boolFromString = (value) => {
+  if (typeof value === "boolean") return value;
+  if (typeof value === "string") {
+    const trimmed = value.trim().toLowerCase();
+    if (!trimmed) return undefined;
+    if (["1", "true", "yes", "on"].includes(trimmed)) return true;
+    if (["0", "false", "no", "off"].includes(trimmed)) return false;
+  }
+  return undefined;
+};
+
+let queryMockFlag;
+if (typeof window !== "undefined" && typeof URLSearchParams !== "undefined") {
+  try {
+    const params = new URLSearchParams(window.location.search || "");
+    const q = params.get("mock");
+    if (q !== null) queryMockFlag = boolFromString(q);
+  } catch (err) {
+    errL("Failed to parse ?mock query param", err);
+  }
+}
+
+const envMockFlag =
+  typeof process !== "undefined" ? boolFromString(process.env?.VEJICE_USE_MOCK ?? "") : undefined;
+let resolvedMock;
+if (typeof queryMockFlag === "boolean") {
+  resolvedMock = queryMockFlag;
+} else if (typeof envMockFlag === "boolean") {
+  resolvedMock = envMockFlag;
+}
+
+if (typeof window !== "undefined" && typeof resolvedMock === "boolean") {
+  window.__VEJICE_USE_MOCK__ = resolvedMock;
+  if (resolvedMock) log("Mock API mode is ENABLED");
+}
+
+Office.onReady(() => {
+  log("Office ready | Host:", Office?.context?.host, "| Platform:", Office?.platform);
+});
+
+// —————————————————————————————————————————————
+// Ribbon commands (must be globals)
+// —————————————————————————————————————————————
+window.checkDocumentText = async (event) => {
+  const t0 = tnow();
+  const now = Date.now();
+  log("CLICK: Preveri vejice (checkDocumentText)");
+  if (now - lastCheckClickAt < CHECK_CLICK_DEBOUNCE_MS) {
+    log("checkDocumentText ignored: debounced");
+    done(event, "checkDocumentText");
+    log("event.completed(): checkDocumentText");
+    return;
+  }
+  lastCheckClickAt = now;
+  if (isCheckRunning || isDocumentCheckInProgress()) {
+    log("checkDocumentText ignored: already running");
+    done(event, "checkDocumentText");
+    log("event.completed(): checkDocumentText");
+    return;
+  }
+  isCheckRunning = true;
+  isCommandBusy = true;
+  await syncRibbonButtonState();
+  try {
+    const summary = await runCheckVejice();
+    if (summary?.status === "deferred") {
+      log("checkDocumentText deferred:", summary?.reason || "unknown");
+    }
+    log("DONE: checkDocumentText |", Math.round(tnow() - t0), "ms");
+  } catch (err) {
+    errL("checkDocumentText failed:", err);
+  } finally {
+    isCheckRunning = false;
+    isCommandBusy = false;
+    await syncRibbonButtonState();
+    done(event, "checkDocumentText");
+    log("event.completed(): checkDocumentText");
+  }
+};
+
+window.acceptAllChanges = async (event) => {
+  const t0 = tnow();
+  log("CLICK: Sprejmi spremembe (acceptAllChanges)");
+  if (isDocumentCheckInProgress()) {
+    log("acceptAllChanges ignored: check in progress");
+    showCommandToast("Počakajte, da se preverjanje konča.");
+    done(event, "acceptAllChanges");
+    log("event.completed(): acceptAllChanges");
+    return;
+  }
+  if (isCommandBusy) {
+    log("acceptAllChanges ignored: another command is running");
+    done(event, "acceptAllChanges");
+    log("event.completed(): acceptAllChanges");
+    return;
+  }
+  isCommandBusy = true;
+  await syncRibbonButtonState();
+  try {
+    if (isWordOnline()) {
+      const applySummary = await applyAllSuggestionsOnline();
+      log("Apply online summary:", applySummary);
+      log(
+        "Applied online suggestions |",
+        applySummary?.durationMs ?? Math.round(tnow() - t0),
+        "ms"
+      );
+    } else {
+      if (!revisionsApiSupported()) {
+        throw new Error("Revisions API is not available on this host");
+      }
+      await Word.run(async (context) => {
+        const revisions = context.document.revisions;
+        if (typeof revisions.getFirstOrNullObject === "function") {
+          const firstRevision = revisions.getFirstOrNullObject();
+          firstRevision.load("isNullObject");
+          await context.sync();
+          if (firstRevision.isNullObject) {
+            log("Revisions to accept: 0");
+            return;
+          }
+        }
+        revisions.load("items");
+        await context.sync();
+
+        const count = revisions.items.length;
+        log("Revisions to accept:", count);
+        if (!count) return;
+
+        revisions.items.forEach((rev) => rev.accept());
+        await context.sync();
+
+        log("Accepted revisions:", count, "|", Math.round(tnow() - t0), "ms");
+      });
+    }
+  } catch (err) {
+    if (err?.message?.includes("Revisions API is not available")) {
+      errL("acceptAllChanges skipped: revisions API is not available on this host");
+    } else {
+      errL("acceptAllChanges failed:", err);
+    }
+  } finally {
+    isCommandBusy = false;
+    await syncRibbonButtonState();
+    done(event, "acceptAllChanges");
+    log("event.completed(): acceptAllChanges");
+  }
+};
+
+window.rejectAllChanges = async (event) => {
+  const t0 = tnow();
+  log("CLICK: Zavrni spremembe (rejectAllChanges)");
+  if (isDocumentCheckInProgress()) {
+    log("rejectAllChanges ignored: check in progress");
+    showCommandToast("Počakajte, da se preverjanje konča.");
+    done(event, "rejectAllChanges");
+    log("event.completed(): rejectAllChanges");
+    return;
+  }
+  if (isCommandBusy) {
+    log("rejectAllChanges ignored: another command is running");
+    done(event, "rejectAllChanges");
+    log("event.completed(): rejectAllChanges");
+    return;
+  }
+  isCommandBusy = true;
+  await syncRibbonButtonState();
+  try {
+    if (isWordOnline()) {
+      const rejectSummary = await rejectAllSuggestionsOnline();
+      log("Reject online summary:", rejectSummary);
+      log(
+        "Cleared online suggestions |",
+        rejectSummary?.durationMs ?? Math.round(tnow() - t0),
+        "ms"
+      );
+    } else {
+      if (!revisionsApiSupported()) {
+        throw new Error("Revisions API is not available on this host");
+      }
+      await Word.run(async (context) => {
+        const revisions = context.document.revisions;
+        if (typeof revisions.getFirstOrNullObject === "function") {
+          const firstRevision = revisions.getFirstOrNullObject();
+          firstRevision.load("isNullObject");
+          await context.sync();
+          if (firstRevision.isNullObject) {
+            log("Revisions to reject: 0");
+            return;
+          }
+        }
+        revisions.load("items");
+        await context.sync();
+
+        const count = revisions.items.length;
+        log("Revisions to reject:", count);
+        if (!count) return;
+
+        revisions.items.forEach((rev) => rev.reject());
+        await context.sync();
+
+        log("Rejected revisions:", count, "|", Math.round(tnow() - t0), "ms");
+      });
+    }
+  } catch (err) {
+    if (err?.message?.includes("Revisions API is not available")) {
+      errL("rejectAllChanges skipped: revisions API is not available on this host");
+    } else {
+      errL("rejectAllChanges failed:", err);
+    }
+  } finally {
+    isCommandBusy = false;
+    await syncRibbonButtonState();
+    done(event, "rejectAllChanges");
+    log("event.completed(): rejectAllChanges");
+  }
+};
