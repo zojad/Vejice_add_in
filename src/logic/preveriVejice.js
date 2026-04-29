@@ -6890,34 +6890,45 @@ async function resolveTokenPairRangesForAnchors(
   }
   const beforeMatches = beforeSearch?.matches || null;
   const afterMatches = afterSearch?.matches || null;
+  const beforeItems = Array.isArray(beforeMatches?.items) ? beforeMatches.items : [];
+  const afterItems = Array.isArray(afterMatches?.items) ? afterMatches.items : [];
+  if (!beforeItems.length || !afterItems.length) return null;
 
   const beforeCharEnd = pairMatch.beforeStart + pairMatch.beforeToken.length;
   const afterCharEnd = pairMatch.afterStart + pairMatch.afterToken.length;
-  let beforeRange = await getRangeForCharacterSpan(
-    context,
-    paragraph,
-    liveText,
-    pairMatch.beforeStart,
-    beforeCharEnd,
-    "strict-token-pair-before",
-    pairMatch.beforeToken,
-    { lookupMemo: options?.lookupMemo, snapshotKey }
-  );
-  let afterRange = await getRangeForCharacterSpan(
-    context,
-    paragraph,
-    liveText,
-    pairMatch.afterStart,
-    afterCharEnd,
-    "strict-token-pair-after",
-    pairMatch.afterToken,
-    { lookupMemo: options?.lookupMemo, snapshotKey }
-  );
+  let beforeRange =
+    beforeItems.length === 1 ? beforeItems[0] : null;
+  let afterRange =
+    afterItems.length === 1 ? afterItems[0] : null;
   if (!beforeRange) {
-    beforeRange = beforeMatches.items[pairMatch.beforeIndex] || null;
+    beforeRange = await getRangeForCharacterSpan(
+      context,
+      paragraph,
+      liveText,
+      pairMatch.beforeStart,
+      beforeCharEnd,
+      "strict-token-pair-before",
+      pairMatch.beforeToken,
+      { lookupMemo: options?.lookupMemo, snapshotKey }
+    );
   }
   if (!afterRange) {
-    afterRange = afterMatches.items[pairMatch.afterIndex] || null;
+    afterRange = await getRangeForCharacterSpan(
+      context,
+      paragraph,
+      liveText,
+      pairMatch.afterStart,
+      afterCharEnd,
+      "strict-token-pair-after",
+      pairMatch.afterToken,
+      { lookupMemo: options?.lookupMemo, snapshotKey }
+    );
+  }
+  if (!beforeRange) {
+    beforeRange = beforeItems[pairMatch.beforeIndex] || null;
+  }
+  if (!afterRange) {
+    afterRange = afterItems[pairMatch.afterIndex] || null;
   }
   if (!beforeRange || !afterRange) return null;
 
@@ -13767,26 +13778,31 @@ async function checkDocumentTextDesktop(checkToken) {
             const getDeferredOpSuggestions = (op) =>
               Array.isArray(op?.suggestions) ? op.suggestions.filter(Boolean) : [];
             let deferredVirtualText = currentSnapshotText;
+            // currentSnapshotText has just been synced; only refresh again after queued mutations.
+            let deferredNeedsLiveRefresh = false;
             for (let deferredIndex = 0; deferredIndex < deferredPlan.length; deferredIndex++) {
               const deferredOp = deferredPlan[deferredIndex];
               applyOpsAttempted++;
               const deferredOpSuggestions = getDeferredOpSuggestions(deferredOp);
               // Re-sync paragraph text each deferred step so range resolution uses live
               // content after previous queued operations (prevents drift on repeated tokens).
-              try {
-                await withDesktopSyncScope("apply_deferred_refresh", async () => {
-                  paragraph.load("text");
-                  await context.sync();
-                });
-                if (typeof paragraph.text === "string") {
-                  deferredVirtualText = paragraph.text;
+              if (deferredNeedsLiveRefresh) {
+                try {
+                  await withDesktopSyncScope("apply_deferred_refresh", async () => {
+                    paragraph.load("text");
+                    await context.sync();
+                  });
+                  if (typeof paragraph.text === "string") {
+                    deferredVirtualText = paragraph.text;
+                  }
+                  deferredNeedsLiveRefresh = false;
+                } catch (refreshErr) {
+                  warnDesktopVerbose("Desktop deferred step text refresh failed", {
+                    paragraphIndex: job.paragraphIndex,
+                    opIndex: deferredIndex,
+                    err: refreshErr,
+                  });
                 }
-              } catch (refreshErr) {
-                warnDesktopVerbose("Desktop deferred step text refresh failed", {
-                  paragraphIndex: job.paragraphIndex,
-                  opIndex: deferredIndex,
-                  err: refreshErr,
-                });
               }
               if (deferredOp?.kind === "insert" && deferredOpSuggestions.length) {
                 const alreadyApplied = deferredOpSuggestions.every((suggestion) =>
@@ -14138,6 +14154,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 applyOpsQueued++;
                 desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - opApplyStartedAt);
                 deferredVirtualText = applyOpToVirtualText(deferredVirtualText, deferredOp);
+                deferredNeedsLiveRefresh = true;
               } catch (err) {
                 applyOpFailures++;
                 warn("Desktop batch op failed", {
