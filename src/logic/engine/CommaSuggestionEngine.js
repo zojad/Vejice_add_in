@@ -1378,6 +1378,14 @@ export class CommaSuggestionEngine {
     this.chunkApiResponseCache.clear();
   }
 
+  clearTransientFailureState() {
+    if (this.apiChunkFailureCooldownUntil && typeof this.apiChunkFailureCooldownUntil.clear === "function") {
+      this.apiChunkFailureCooldownUntil.clear();
+    }
+    this.apiHealthFailures = [];
+    this.apiIsUnhealthy = false;
+  }
+
   recordApiFailure() {
     const now = Date.now();
     this.apiHealthFailures.push(now);

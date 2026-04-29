@@ -1885,6 +1885,7 @@ const ONLINE_PARAGRAPH_TIMEOUT_MS_DEFAULT = 20000;
 const ONLINE_ANALYZE_CONCURRENCY_DEFAULT = 1;
 const LOCAL_ONLINE_ANALYZE_CONCURRENCY_DEFAULT = 1;
 const DESKTOP_ANALYZE_CONCURRENCY_DEFAULT = 1;
+const ONLINE_MARKER_TAG_CLEANUP_BATCH_SIZE_DEFAULT = 30;
 const POST_APPLY_CHECK_COOLDOWN_MS_DEFAULT = 1200;
 const CHECK_ABORT_REASON_TIMEOUT = "check-timeout";
 const CHECK_ABORT_REASON_CANCELLED = "check-cancelled";
@@ -2008,6 +2009,18 @@ function resolveOnlineAnalyzeConcurrency() {
     : ONLINE_ANALYZE_CONCURRENCY_DEFAULT;
   const value = override ?? defaultValue;
   return Math.max(1, Math.min(value, 8));
+}
+
+function resolveOnlineMarkerTagCleanupBatchSize() {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_ONLINE_MARKER_TAG_CLEANUP_BATCH_SIZE);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override = parsePositiveInteger(process.env?.VEJICE_ONLINE_MARKER_TAG_CLEANUP_BATCH_SIZE);
+  }
+  const value = override ?? ONLINE_MARKER_TAG_CLEANUP_BATCH_SIZE_DEFAULT;
+  return Math.max(1, Math.min(value, 200));
 }
 
 function resolvePostApplyCheckCooldownMs() {
@@ -12925,9 +12938,22 @@ async function checkDocumentTextDesktop(checkToken) {
   const checkAbortSignal = checkAbortController?.signal || null;
   const paragraphSnapshots = [];
   let desktopCheckBlocked = false;
+  const desktopPhaseTiming = {
+    readMs: 0,
+    analyzeMs: 0,
+    applyMs: 0,
+    anchorSeedMs: 0,
+    applyPlanMs: 0,
+    applyOpsMs: 0,
+    cleanupMs: 0,
+  };
+  let applyOpsAttempted = 0;
+  let applyOpsQueued = 0;
+  let applyOpsSkipped = 0;
 
   try {
     // Phase 1: read document state + paragraph text in a single Word batch.
+    const readPhaseStartedAt = tnow();
     await Word.run(async (context) => {
       logDesktopVerbose("Desktop phase: tracked-change guard:start");
       if (await documentHasTrackedChanges(context)) {
@@ -12973,6 +12999,7 @@ async function checkDocumentTextDesktop(checkToken) {
         documentCharOffset += sourceText.length + 1;
       }
     });
+    desktopPhaseTiming.readMs = Math.max(0, tnow() - readPhaseStartedAt);
     if (desktopCheckBlocked) {
       return {
         status: "blocked",
@@ -12985,10 +13012,18 @@ async function checkDocumentTextDesktop(checkToken) {
         nonCommaSalvaged,
         applyRangeMisses,
         applyOpFailures,
+        desktopPhaseTiming: {
+          ...desktopPhaseTiming,
+          readMs: roundMs(desktopPhaseTiming.readMs),
+        },
       };
     }
 
     // Phase 2: analyze paragraphs outside Word.run with bounded concurrency.
+    const analyzePhaseStartedAt = tnow();
+    if (typeof commaEngine?.clearTransientFailureState === "function") {
+      commaEngine.clearTransientFailureState();
+    }
     anchorProvider.reset();
     if (paragraphCacheDisabled) {
       desktopParagraphAnalysisCache.length = 0;
@@ -13001,6 +13036,7 @@ async function checkDocumentTextDesktop(checkToken) {
       const normalizedSource = normalizeParagraphWhitespace(snapshot.sourceText);
       const trimmed = normalizedSource.trim();
       if (!trimmed) {
+        const anchorSeedStartedAt = tnow();
         await anchorProvider.getAnchors({
           paragraphIndex: snapshot.paragraphIndex,
           originalText: snapshot.sourceText,
@@ -13009,6 +13045,7 @@ async function checkDocumentTextDesktop(checkToken) {
           targetTokens: [],
           documentOffset: snapshot.paragraphDocOffset,
         });
+        desktopPhaseTiming.anchorSeedMs += Math.max(0, tnow() - anchorSeedStartedAt);
         if (!paragraphCacheDisabled) {
           desktopParagraphAnalysisCache[snapshot.paragraphIndex] = null;
         }
@@ -13184,9 +13221,11 @@ async function checkDocumentTextDesktop(checkToken) {
         fromCache: false,
       });
     }
+    desktopPhaseTiming.analyzeMs = Math.max(0, tnow() - analyzePhaseStartedAt);
 
     // Phase 3: apply edits in Word.run.
     if (applyJobs.length) {
+      const applyPhaseStartedAt = tnow();
       await Word.run(async (context) => {
         logDesktopVerbose("Desktop phase: apply:start", { paragraphsWithSuggestions: applyJobs.length });
         // Re-check tracked changes safety before mutating document.
@@ -13232,12 +13271,14 @@ async function checkDocumentTextDesktop(checkToken) {
                 deterministicMode: false,
                 applyOrder: "asc",
               };
+          const planStartedAt = tnow();
           const { plan, skipped, noop } = buildParagraphOperationsPlan(
             snapshotText,
             sourceForPlan,
             job.suggestions,
             planOptions
           );
+          desktopPhaseTiming.applyPlanMs += Math.max(0, tnow() - planStartedAt);
           if (DESKTOP_VERBOSE_LOGS) {
             logDesktopVerbose("Desktop apply plan", {
               paragraphIndex: job.paragraphIndex,
@@ -13288,6 +13329,7 @@ async function checkDocumentTextDesktop(checkToken) {
           const deferredSuggestions = [];
           for (let opIndex = 0; opIndex < plan.length; opIndex++) {
             const op = plan[opIndex];
+            applyOpsAttempted++;
             try {
               if (DESKTOP_VERBOSE_LOGS) {
                 logDesktopVerbose("Desktop apply op:attempt", {
@@ -13301,6 +13343,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 !deterministicMappingV2 &&
                 isDesktopDirectInsertOp(op)
               ) {
+                const directApplyStartedAt = tnow();
                 const directStatus = await applyDesktopAuthoritativeInsertOp(
                   context,
                   paragraph,
@@ -13308,6 +13351,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   sourceForPlan,
                   op
                 );
+                desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - directApplyStartedAt);
                 if (DESKTOP_VERBOSE_LOGS) {
                   logDesktopVerbose("Desktop apply op:direct result", {
                     paragraphIndex: job.paragraphIndex,
@@ -13317,10 +13361,12 @@ async function checkDocumentTextDesktop(checkToken) {
                   });
                 }
                 if (directStatus === "noop") {
+                  applyOpsSkipped++;
                   continue;
                 }
                 if (directStatus === "applied") {
                   countAppliedSuggestions(op);
+                  applyOpsQueued++;
                   continue;
                 }
               }
@@ -13342,6 +13388,7 @@ async function checkDocumentTextDesktop(checkToken) {
             paragraph.load("text");
             await context.sync();
             const currentSnapshotText = paragraph.text || "";
+            const deferredPlanStartedAt = tnow();
             const {
               plan: deferredPlan,
               skipped: deferredSkipped,
@@ -13352,6 +13399,7 @@ async function checkDocumentTextDesktop(checkToken) {
               deferredSuggestions,
               planOptions
             );
+            desktopPhaseTiming.applyPlanMs += Math.max(0, tnow() - deferredPlanStartedAt);
             if (DESKTOP_VERBOSE_LOGS) {
               logDesktopVerbose("Desktop deferred apply plan", {
                 paragraphIndex: job.paragraphIndex,
@@ -13414,6 +13462,7 @@ async function checkDocumentTextDesktop(checkToken) {
             let deferredVirtualText = currentSnapshotText;
             for (let deferredIndex = 0; deferredIndex < deferredPlan.length; deferredIndex++) {
               const deferredOp = deferredPlan[deferredIndex];
+              applyOpsAttempted++;
               const deferredOpSuggestions = getDeferredOpSuggestions(deferredOp);
               // Re-sync paragraph text each deferred step so range resolution uses live
               // content after previous queued operations (prevents drift on repeated tokens).
@@ -13435,6 +13484,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   isSuggestionAppliedInLiveText(deferredVirtualText, sourceForPlan, suggestion, planOptions)
                 );
                 if (alreadyApplied) {
+                  applyOpsSkipped++;
                   if (DESKTOP_VERBOSE_LOGS) {
                     logDesktopVerbose("Desktop deferred op:skipped already applied", {
                       paragraphIndex: job.paragraphIndex,
@@ -13444,7 +13494,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   }
                   continue;
                 }
-                const resolveDeferredTokenPairAnchors = (suggestion) => {
+                const deferredSuggestionDiagnostics = deferredOpSuggestions.map((suggestion) => {
                   const meta = suggestion?.meta?.anchor || {};
                   const boundaryMeta = meta?.boundaryMeta || {};
                   const beforeAnchor =
@@ -13457,16 +13507,6 @@ async function checkDocumentTextDesktop(checkToken) {
                     meta?.sourceTokenAfter ??
                     meta?.targetTokenAfter ??
                     null;
-                  return { meta, boundaryMeta, beforeAnchor, afterAnchor };
-                };
-                const hasAnchoredTokenPair = deferredOpSuggestions.some((suggestion) => {
-                  const anchors = resolveDeferredTokenPairAnchors(suggestion);
-                  return Boolean(anchors.beforeAnchor && anchors.afterAnchor);
-                });
-                const hasCommaAlreadyInTokenGap = deferredOpSuggestions.some((suggestion) => {
-                  const { meta, boundaryMeta, beforeAnchor, afterAnchor } =
-                    resolveDeferredTokenPairAnchors(suggestion);
-                  if (!beforeAnchor || !afterAnchor) return false;
                   const preferredGapHint = firstFiniteValue([
                     boundaryMeta?.sourceBoundaryPos,
                     boundaryMeta?.sourceBoundaryStart,
@@ -13474,33 +13514,52 @@ async function checkDocumentTextDesktop(checkToken) {
                     suggestion?.charHint?.start,
                     meta?.charStart,
                   ]);
-                  const pairMatch = resolveTokenPairMatchInText(
-                    deferredVirtualText,
-                    sourceForPlan,
+                  return {
                     suggestion,
+                    meta,
+                    boundaryMeta,
                     beforeAnchor,
                     afterAnchor,
+                    preferredGapHint,
+                    pairDiagnostics: null,
+                  };
+                });
+                const hasAnchoredTokenPair = deferredSuggestionDiagnostics.some((entry) =>
+                  Boolean(entry.beforeAnchor && entry.afterAnchor)
+                );
+                for (const entry of deferredSuggestionDiagnostics) {
+                  if (!entry.beforeAnchor || !entry.afterAnchor) continue;
+                  entry.pairDiagnostics = resolveTokenPairMatchInText(
+                    deferredVirtualText,
+                    sourceForPlan,
+                    entry.suggestion,
+                    entry.beforeAnchor,
+                    entry.afterAnchor,
                     {
-                      beforeHintIndex: boundaryMeta?.sourceBoundaryStart,
-                      afterHintIndex: boundaryMeta?.sourceBoundaryEnd,
-                      preferredGapHintIndex: preferredGapHint,
-                      beforeOccurrence: Number.isFinite(boundaryMeta?.beforeTokenOccurrence)
-                        ? boundaryMeta.beforeTokenOccurrence
+                      beforeHintIndex: entry.boundaryMeta?.sourceBoundaryStart,
+                      afterHintIndex: entry.boundaryMeta?.sourceBoundaryEnd,
+                      preferredGapHintIndex: entry.preferredGapHint,
+                      beforeOccurrence: Number.isFinite(entry.boundaryMeta?.beforeTokenOccurrence)
+                        ? entry.boundaryMeta.beforeTokenOccurrence
                         : null,
-                      afterOccurrence: Number.isFinite(boundaryMeta?.afterTokenOccurrence)
-                        ? boundaryMeta.afterTokenOccurrence
+                      afterOccurrence: Number.isFinite(entry.boundaryMeta?.afterTokenOccurrence)
+                        ? entry.boundaryMeta.afterTokenOccurrence
                         : null,
                       allowQuoteGap: true,
                       allowCommaInGap: true,
+                      returnDiagnostics: true,
                     }
                   );
-                  return Boolean(
-                    pairMatch &&
-                      typeof pairMatch.gapText === "string" &&
-                      hasBlockingBoundaryCommaInGap(pairMatch.gapText)
-                  );
-                });
+                }
+                const hasCommaAlreadyInTokenGap = deferredSuggestionDiagnostics.some((entry) =>
+                  Boolean(
+                    entry.pairDiagnostics &&
+                      typeof entry.pairDiagnostics?.gapText === "string" &&
+                      hasBlockingBoundaryCommaInGap(entry.pairDiagnostics.gapText)
+                  )
+                );
                 if (hasCommaAlreadyInTokenGap) {
+                  applyOpsSkipped++;
                   if (DESKTOP_VERBOSE_LOGS) {
                     logDesktopVerbose("Desktop deferred op:skipped existing comma in token gap", {
                       paragraphIndex: job.paragraphIndex,
@@ -13510,41 +13569,11 @@ async function checkDocumentTextDesktop(checkToken) {
                   }
                   continue;
                 }
-                const hasAmbiguousTokenPair = deferredOpSuggestions.some((suggestion) => {
-                  const { meta, boundaryMeta, beforeAnchor, afterAnchor } =
-                    resolveDeferredTokenPairAnchors(suggestion);
-                  if (!beforeAnchor || !afterAnchor) return false;
-                  const preferredGapHint = firstFiniteValue([
-                    boundaryMeta?.sourceBoundaryPos,
-                    boundaryMeta?.sourceBoundaryStart,
-                    suggestion?.meta?.op?.originalPos,
-                    suggestion?.charHint?.start,
-                    meta?.charStart,
-                  ]);
-                  const pairDiagnostics = resolveTokenPairMatchInText(
-                    deferredVirtualText,
-                    sourceForPlan,
-                    suggestion,
-                    beforeAnchor,
-                    afterAnchor,
-                    {
-                      beforeHintIndex: boundaryMeta?.sourceBoundaryStart,
-                      afterHintIndex: boundaryMeta?.sourceBoundaryEnd,
-                      preferredGapHintIndex: preferredGapHint,
-                      beforeOccurrence: Number.isFinite(boundaryMeta?.beforeTokenOccurrence)
-                        ? boundaryMeta.beforeTokenOccurrence
-                        : null,
-                      afterOccurrence: Number.isFinite(boundaryMeta?.afterTokenOccurrence)
-                        ? boundaryMeta.afterTokenOccurrence
-                        : null,
-                      allowQuoteGap: true,
-                      allowCommaInGap: true,
-                      returnDiagnostics: true,
-                    }
-                  );
-                  return Boolean(pairDiagnostics?.ambiguous);
-                });
+                const hasAmbiguousTokenPair = deferredSuggestionDiagnostics.some((entry) =>
+                  Boolean(entry.pairDiagnostics?.ambiguous)
+                );
                 if (hasAmbiguousTokenPair) {
+                  applyOpsSkipped++;
                   if (DESKTOP_VERBOSE_LOGS) {
                     logDesktopVerbose("Desktop deferred op:skipped ambiguous token pair", {
                       paragraphIndex: job.paragraphIndex,
@@ -13579,6 +13608,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   24
                 );
                 if (fingerprintCheck?.ambiguous) {
+                  applyOpsSkipped++;
                   if (DESKTOP_VERBOSE_LOGS) {
                     logDesktopVerbose("Desktop deferred op:skipped ambiguous boundary fingerprint", {
                       paragraphIndex: job.paragraphIndex,
@@ -13596,6 +13626,7 @@ async function checkDocumentTextDesktop(checkToken) {
                     hasCommaNearMappedHint(deferredVirtualText, hint, 0)
                   );
                   if (commaAlreadyNearBoundary) {
+                    applyOpsSkipped++;
                     if (DESKTOP_VERBOSE_LOGS) {
                       logDesktopVerbose("Desktop deferred op:skipped existing comma near boundary", {
                         paragraphIndex: job.paragraphIndex,
@@ -13624,6 +13655,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   const checkTo = Math.min(simulatedText.length, insertPos + 4);
                   const localWindow = simulatedText.slice(checkFrom, checkTo);
                   if (/,\s*,/u.test(localWindow)) {
+                    applyOpsSkipped++;
                     if (DESKTOP_VERBOSE_LOGS) {
                       logDesktopVerbose("Desktop deferred op:skipped double-comma guard", {
                         paragraphIndex: job.paragraphIndex,
@@ -13664,6 +13696,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   }
                 } else if (hasBoundaryCue) {
                   applyRangeMisses++;
+                  applyOpsSkipped++;
                   if (DESKTOP_VERBOSE_LOGS) {
                     logDesktopVerbose("Desktop deferred op:skipped strict boundary unresolved", {
                       paragraphIndex: job.paragraphIndex,
@@ -13702,6 +13735,7 @@ async function checkDocumentTextDesktop(checkToken) {
               }
               if (!deferredRange) {
                 applyRangeMisses++;
+                applyOpsSkipped++;
                 warn("Desktop batch op skipped: range not resolved", {
                   paragraphIndex: job.paragraphIndex,
                   opIndex: deferredIndex,
@@ -13744,6 +13778,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 !deferredResolvedRangeText.includes(",")
               ) {
                 applyRangeMisses++;
+                applyOpsSkipped++;
                 if (DESKTOP_VERBOSE_LOGS) {
                   logDesktopVerbose("Desktop deferred op:skipped delete range mismatch", {
                     paragraphIndex: job.paragraphIndex,
@@ -13755,6 +13790,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 continue;
               }
               try {
+                const opApplyStartedAt = tnow();
                 if (DESKTOP_VERBOSE_LOGS) {
                   logDesktopVerbose("Desktop deferred op:attempt", {
                     paragraphIndex: job.paragraphIndex,
@@ -13774,6 +13810,8 @@ async function checkDocumentTextDesktop(checkToken) {
                   });
                 }
                 countAppliedSuggestions(deferredOp);
+                applyOpsQueued++;
+                desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - opApplyStartedAt);
                 deferredVirtualText = applyOpToVirtualText(deferredVirtualText, deferredOp);
               } catch (err) {
                 applyOpFailures++;
@@ -13850,12 +13888,14 @@ async function checkDocumentTextDesktop(checkToken) {
 
           if (appliedInParagraph) {
             try {
+              const cleanupStartedAt = tnow();
               await cleanupCommaSpacingForParagraphs(
                 context,
                 paras,
                 new Set([job.paragraphIndex]),
                 { force: true }
               );
+              desktopPhaseTiming.cleanupMs += Math.max(0, tnow() - cleanupStartedAt);
             } catch (cleanupErr) {
               warn("Desktop post-apply comma spacing cleanup failed", {
                 paragraphIndex: job.paragraphIndex,
@@ -13874,6 +13914,7 @@ async function checkDocumentTextDesktop(checkToken) {
           }
         }
       });
+      desktopPhaseTiming.applyMs = Math.max(0, tnow() - applyPhaseStartedAt);
     }
 
     log(
@@ -13915,6 +13956,12 @@ async function checkDocumentTextDesktop(checkToken) {
       applyRangeMisses,
       "| applyOpFailures:",
       applyOpFailures,
+      "| applyOpsAttempted:",
+      applyOpsAttempted,
+      "| applyOpsQueued:",
+      applyOpsQueued,
+      "| applyOpsSkipped:",
+      applyOpsSkipped,
       "| skippedSegments:",
       skippedSegmentsTotal,
       "| skippedSegmentsTruncated:",
@@ -13930,7 +13977,21 @@ async function checkDocumentTextDesktop(checkToken) {
       "| minParagraphMs:",
       roundMs(paragraphTimingCount > 0 ? paragraphTimingMinMs : 0),
       "| maxParagraphMs:",
-      roundMs(paragraphTimingCount > 0 ? paragraphTimingMaxMs : 0)
+      roundMs(paragraphTimingCount > 0 ? paragraphTimingMaxMs : 0),
+      "| phaseReadMs:",
+      roundMs(desktopPhaseTiming.readMs),
+      "| phaseAnalyzeMs:",
+      roundMs(desktopPhaseTiming.analyzeMs),
+      "| phaseApplyMs:",
+      roundMs(desktopPhaseTiming.applyMs),
+      "| phasePlanMs:",
+      roundMs(desktopPhaseTiming.applyPlanMs),
+      "| phaseApplyOpsMs:",
+      roundMs(desktopPhaseTiming.applyOpsMs),
+      "| phaseCleanupMs:",
+      roundMs(desktopPhaseTiming.cleanupMs),
+      "| phaseAnchorSeedMs:",
+      roundMs(desktopPhaseTiming.anchorSeedMs)
     );
     if (
       paragraphsProcessed > 0 &&
@@ -13955,10 +14016,22 @@ async function checkDocumentTextDesktop(checkToken) {
       deterministicPlannerSkips,
       applyRangeMisses,
       applyOpFailures,
+      applyOpsAttempted,
+      applyOpsQueued,
+      applyOpsSkipped,
       cacheDisabled: paragraphCacheDisabled,
       cacheHits,
       cacheMisses,
       unchangedHardSkips,
+      desktopPhaseTiming: {
+        readMs: roundMs(desktopPhaseTiming.readMs),
+        analyzeMs: roundMs(desktopPhaseTiming.analyzeMs),
+        applyMs: roundMs(desktopPhaseTiming.applyMs),
+        anchorSeedMs: roundMs(desktopPhaseTiming.anchorSeedMs),
+        applyPlanMs: roundMs(desktopPhaseTiming.applyPlanMs),
+        applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
+        cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
+      },
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
@@ -13988,7 +14061,19 @@ async function checkDocumentTextDesktop(checkToken) {
       deterministicPlannerSkips,
       applyRangeMisses,
       applyOpFailures,
+      applyOpsAttempted,
+      applyOpsQueued,
+      applyOpsSkipped,
       unchangedHardSkips,
+      desktopPhaseTiming: {
+        readMs: roundMs(desktopPhaseTiming.readMs),
+        analyzeMs: roundMs(desktopPhaseTiming.analyzeMs),
+        applyMs: roundMs(desktopPhaseTiming.applyMs),
+        anchorSeedMs: roundMs(desktopPhaseTiming.anchorSeedMs),
+        applyPlanMs: roundMs(desktopPhaseTiming.applyPlanMs),
+        applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
+        cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
+      },
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
@@ -14124,22 +14209,49 @@ async function checkDocumentTextOnline(checkToken) {
           pendingHighlightSuggestions = 0;
         }
       };
+      const markerTagCleanupBatchSize = resolveOnlineMarkerTagCleanupBatchSize();
+      const queuedMarkerTagsForCleanup = new Set();
+      const queuedMarkerRestoreByTag = new Map();
+      const flushQueuedMarkerTagCleanup = async ({ force = false } = {}) => {
+        if (!queuedMarkerTagsForCleanup.size) return false;
+        if (!force && queuedMarkerTagsForCleanup.size < markerTagCleanupBatchSize) return false;
+        ensureCheckActionActive(checkToken);
+        const tags = Array.from(queuedMarkerTagsForCleanup);
+        queuedMarkerTagsForCleanup.clear();
+        if (!tags.length) return false;
+        const clearSummary = await clearSuggestionMarkersByKnownTags(context, tags, {
+          restoreStateByTag: queuedMarkerRestoreByTag,
+        });
+        for (const tag of tags) {
+          queuedMarkerRestoreByTag.delete(tag);
+        }
+        if (clearSummary.clearedCount > 0) {
+          scopedMarkerClears += clearSummary.clearedCount;
+          log("Scoped marker cleanup (known tags, batched)", {
+            cleared: clearSummary.clearedCount,
+            queuedTags: tags.length,
+          });
+        }
+        if (clearSummary.failedCount > 0) {
+          warn("Scoped marker cleanup (known tags, batched) partial failures", {
+            failed: clearSummary.failedCount,
+            queuedTags: tags.length,
+          });
+        }
+        return true;
+      };
       const clearPreviousRenderMarkers = async (paragraphIndex, paragraph) => {
         if (!Number.isFinite(paragraphIndex) || paragraphIndex < 0) return;
         const previousRender = onlineParagraphRenderState.get(paragraphIndex);
         if (Array.isArray(previousRender?.markerTags) && previousRender.markerTags.length) {
-          const clearSummary = await clearSuggestionMarkersByKnownTags(
-            context,
-            previousRender.markerTags,
-            { restoreStateByTag: previousMarkerRestoreByTag }
-          );
-          if (clearSummary.clearedCount > 0) {
-            scopedMarkerClears += clearSummary.clearedCount;
-            log("Scoped marker cleanup (known tags)", {
-              paragraphIndex,
-              cleared: clearSummary.clearedCount,
-            });
+          for (const markerTag of previousRender.markerTags) {
+            if (typeof markerTag !== "string" || !markerTag.trim()) continue;
+            queuedMarkerTagsForCleanup.add(markerTag);
+            if (previousMarkerRestoreByTag.has(markerTag)) {
+              queuedMarkerRestoreByTag.set(markerTag, previousMarkerRestoreByTag.get(markerTag));
+            }
           }
+          await flushQueuedMarkerTagCleanup();
           clearOnlineParagraphRenderState(paragraphIndex);
           reconciledParagraphIndexes.add(paragraphIndex);
           return;
@@ -14251,6 +14363,7 @@ async function checkDocumentTextOnline(checkToken) {
         }
 
         await clearPreviousRenderMarkers(paragraphIndex, paragraph);
+        await flushQueuedMarkerTagCleanup({ force: true });
 
         let highlightedInParagraph = 0;
         for (let suggestionIndex = 0; suggestionIndex < renderList.length; suggestionIndex++) {
@@ -14708,6 +14821,7 @@ async function checkDocumentTextOnline(checkToken) {
         }
       );
       await drainReadyAnalyzedInOrder();
+      await flushQueuedMarkerTagCleanup({ force: true });
 
       persistPendingSuggestionsOnline();
       await context.sync();
