@@ -2792,7 +2792,8 @@ async function getRangeForCharacterSpan(
   charStart,
   charEnd,
   reason = "span",
-  fallbackSnippet
+  fallbackSnippet,
+  options = {}
 ) {
   if (charSpanRangeResolutionDisabled) {
     if (!charSpanRangeDisableLogged) {
@@ -2820,11 +2821,21 @@ async function getRangeForCharacterSpan(
       await context.sync();
     }
     const liveText = typeof paragraph.text === "string" ? paragraph.text : text;
+    const snapshotKey =
+      typeof options?.snapshotKey === "string" && options.snapshotKey
+        ? options.snapshotKey
+        : `live:${liveText}`;
     let searchSnippet = snippet;
-    let matches = await searchParagraphForSnippet(context, paragraph, searchSnippet);
+    let matches = await searchParagraphForSnippet(context, paragraph, searchSnippet, {
+      lookupMemo: options?.lookupMemo,
+      snapshotKey,
+    });
     if ((!matches?.items?.length) && snippet.trim() && snippet.trim() !== snippet) {
       searchSnippet = snippet.trim();
-      matches = await searchParagraphForSnippet(context, paragraph, searchSnippet);
+      matches = await searchParagraphForSnippet(context, paragraph, searchSnippet, {
+        lookupMemo: options?.lookupMemo,
+        snapshotKey,
+      });
     }
     if (!matches?.items?.length) {
       warn(`getRangeForCharacterSpan(${reason}): snippet not found`, { snippet, safeStart });
@@ -2858,7 +2869,8 @@ async function getRangeForAnchorSpan(
   charStart,
   charEnd,
   reason = "span",
-  fallbackSnippet
+  fallbackSnippet,
+  options = {}
 ) {
   const candidates = [];
   if (anchorsEntry?.originalText) {
@@ -2881,7 +2893,8 @@ async function getRangeForAnchorSpan(
       charStart,
       charEnd,
       `${reason}-${candidate.label}`,
-      fallbackSnippet
+      fallbackSnippet,
+      options
     );
     if (range) {
       return range;
@@ -2915,16 +2928,70 @@ function hasDesktopDirectInsertBoundary(suggestion) {
   return beforeEnd >= 0 || atEnd >= 0 || afterStart >= 0 || charHintStart >= 0;
 }
 
+function toDirectBoundaryTokenSignature(token) {
+  if (!token || typeof token !== "object") return null;
+  const tokenText = typeof token.tokenText === "string" ? token.tokenText.trim() : "";
+  if (!tokenText) return null;
+  const charStart = Number.isFinite(token.charStart) ? Math.floor(token.charStart) : null;
+  const charEnd = Number.isFinite(token.charEnd) ? Math.floor(token.charEnd) : null;
+  return `${tokenText}::${charStart ?? "na"}::${charEnd ?? "na"}`;
+}
+
+function buildDesktopDirectInsertSignature(suggestion) {
+  const meta = suggestion?.meta?.anchor;
+  if (!meta) return null;
+  const boundaryMeta = meta?.boundaryMeta ?? {};
+  const sourceBoundaryPos = Number.isFinite(boundaryMeta?.sourceBoundaryPos)
+    ? Math.floor(boundaryMeta.sourceBoundaryPos)
+    : null;
+  const sourceBoundaryStart = Number.isFinite(boundaryMeta?.sourceBoundaryStart)
+    ? Math.floor(boundaryMeta.sourceBoundaryStart)
+    : null;
+  const sourceBoundaryEnd = Number.isFinite(boundaryMeta?.sourceBoundaryEnd)
+    ? Math.floor(boundaryMeta.sourceBoundaryEnd)
+    : null;
+  const hintStart = Number.isFinite(suggestion?.charHint?.start) ? Math.floor(suggestion.charHint.start) : null;
+  const hintEnd = Number.isFinite(suggestion?.charHint?.end) ? Math.floor(suggestion.charHint.end) : null;
+  return [
+    toDirectBoundaryTokenSignature(meta.sourceTokenBefore),
+    toDirectBoundaryTokenSignature(meta.sourceTokenAt),
+    toDirectBoundaryTokenSignature(meta.sourceTokenAfter),
+    sourceBoundaryPos ?? "na",
+    sourceBoundaryStart ?? "na",
+    sourceBoundaryEnd ?? "na",
+    hintStart ?? "na",
+    hintEnd ?? "na",
+  ].join("|");
+}
+
+function areDesktopDirectInsertSuggestionsEquivalent(suggestions) {
+  if (!Array.isArray(suggestions) || !suggestions.length) return false;
+  if (!suggestions.every(hasDesktopDirectInsertBoundary)) return false;
+  const signatures = suggestions.map((suggestion) => buildDesktopDirectInsertSignature(suggestion));
+  if (signatures.some((signature) => !signature)) return false;
+  const firstSignature = signatures[0];
+  return signatures.every((signature) => signature === firstSignature);
+}
+
 function isDesktopDirectInsertOp(op) {
   if (op?.kind !== "insert") return false;
   const suggestions = Array.isArray(op?.suggestions) ? op.suggestions : [];
-  return suggestions.length === 1 && suggestions.every(hasDesktopDirectInsertBoundary);
+  return areDesktopDirectInsertSuggestionsEquivalent(suggestions);
 }
 
-async function applyDesktopAuthoritativeInsertOp(context, paragraph, paragraphIndex, sourceText, op) {
+async function applyDesktopAuthoritativeInsertOp(
+  context,
+  paragraph,
+  paragraphIndex,
+  sourceText,
+  op,
+  options = {}
+) {
   const suggestions = Array.isArray(op?.suggestions) ? op.suggestions.filter(Boolean) : [];
   if (!suggestions.length) return "failed";
+  if (!areDesktopDirectInsertSuggestionsEquivalent(suggestions)) return "failed";
   if (suggestions.some((candidate) => suggestionTouchesQuoteBoundary(candidate))) return "failed";
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
   const suggestion = suggestions[0];
   const suggestionLog = buildDesktopSuggestionLogEntry(suggestion);
   const meta = suggestion?.meta?.anchor;
@@ -2938,6 +3005,7 @@ async function applyDesktopAuthoritativeInsertOp(context, paragraph, paragraphIn
   paragraph.load("text");
   await context.sync();
   const liveText = paragraph.text || "";
+  const lookupSnapshotKey = `desktop-direct|p:${paragraphIndex}|v:${liveText}`;
   const anchorsEntry = anchorProvider.getAnchorsForParagraph(paragraphIndex);
   const quoteCharRegex = /["'`\u2018\u2019\u201A\u201C\u201D\u201E\u00AB\u00BB\u2039\u203A]/u;
   const boundary = op?.boundary ?? suggestion?.meta?.anchor?.boundaryMeta ?? {};
@@ -3025,7 +3093,8 @@ async function applyDesktopAuthoritativeInsertOp(context, paragraph, paragraphIn
         adjustedBoundary,
         Math.min(adjustedBoundary + 1, liveText.length),
         traceLabel,
-        fallbackSnippet
+        fallbackSnippet,
+        { lookupMemo, snapshotKey: lookupSnapshotKey }
       );
       if (!range) return false;
       range.insertText(",", Word.InsertLocation.before);
@@ -3046,7 +3115,8 @@ async function applyDesktopAuthoritativeInsertOp(context, paragraph, paragraphIn
       Math.max(0, liveText.length - 1),
       liveText.length,
       `${traceLabel}-append`,
-      fallbackSnippet || liveText.slice(Math.max(0, liveText.length - 1))
+      fallbackSnippet || liveText.slice(Math.max(0, liveText.length - 1)),
+      { lookupMemo, snapshotKey: lookupSnapshotKey }
     );
     if (!range) return false;
     range.insertText(",", Word.InsertLocation.after);
@@ -3105,7 +3175,8 @@ async function applyDesktopAuthoritativeInsertOp(context, paragraph, paragraphIn
       anchor.charStart,
       anchorEnd,
       traceLabel,
-      anchor.tokenText || op?.snippet || ","
+      anchor.tokenText || op?.snippet || ",",
+      { lookupMemo, snapshotKey: lookupSnapshotKey }
     );
     if (!range) return false;
     range.insertText(",", insertLocation);
@@ -3171,16 +3242,30 @@ async function applyDesktopAuthoritativeInsertOp(context, paragraph, paragraphIn
   return "failed";
 }
 
-async function searchParagraphForSnippet(context, paragraph, snippet) {
-  const range = paragraph.getRange();
-  const matches = range.search(snippet, {
+async function searchParagraphForSnippet(context, paragraph, snippet, options = {}) {
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+  const snapshotKey = typeof options?.snapshotKey === "string" ? options.snapshotKey : "";
+  const searchOptions = {
     matchCase: true,
     matchWholeWord: false,
     ignoreSpace: false,
     ignorePunct: false,
-  });
+    ...(options?.searchOptions && typeof options.searchOptions === "object" ? options.searchOptions : {}),
+  };
+  const optionsKey = `${searchOptions.matchCase ? 1 : 0}:${searchOptions.matchWholeWord ? 1 : 0}:${
+    searchOptions.ignoreSpace ? 1 : 0
+  }:${searchOptions.ignorePunct ? 1 : 0}`;
+  const memoKey = lookupMemo && snapshotKey ? `search|${snapshotKey}|${optionsKey}|${snippet}` : null;
+  if (memoKey && lookupMemo.has(memoKey)) {
+    return lookupMemo.get(memoKey);
+  }
+  const range = paragraph.getRange();
+  const matches = range.search(snippet, searchOptions);
   matches.load("items");
   await context.sync();
+  if (memoKey) {
+    lookupMemo.set(memoKey, matches);
+  }
   return matches;
 }
 
@@ -3205,13 +3290,21 @@ async function findExactSnippetRangeNearIndex(
   liveText,
   snippet,
   hintIndex,
-  reason = "snippet-range"
+  reason = "snippet-range",
+  options = {}
 ) {
   if (!paragraph || typeof paragraph.getRange !== "function") return null;
   if (typeof snippet !== "string" || !snippet.length) return null;
   const safeLiveText = typeof liveText === "string" ? liveText : "";
   try {
-    const matches = await searchParagraphForSnippet(context, paragraph, snippet);
+    const snapshotKey =
+      typeof options?.snapshotKey === "string" && options.snapshotKey
+        ? options.snapshotKey
+        : `live:${safeLiveText}`;
+    const matches = await searchParagraphForSnippet(context, paragraph, snippet, {
+      lookupMemo: options?.lookupMemo,
+      snapshotKey,
+    });
     if (!matches?.items?.length) {
       warn(`findExactSnippetRangeNearIndex(${reason}): snippet not found`, {
         snippet,
@@ -3237,7 +3330,8 @@ async function findUniqueExactSnippetRangeNearIndex(
   snippet,
   hintIndex,
   reason = "unique-snippet-range",
-  maxHintDrift = 12
+  maxHintDrift = 12,
+  options = {}
 ) {
   if (!paragraph || typeof paragraph.getRange !== "function") return null;
   if (typeof snippet !== "string" || !snippet.length) return null;
@@ -3277,7 +3371,14 @@ async function findUniqueExactSnippetRangeNearIndex(
   }
 
   try {
-    const matches = await searchParagraphForSnippet(context, paragraph, snippet);
+    const snapshotKey =
+      typeof options?.snapshotKey === "string" && options.snapshotKey
+        ? options.snapshotKey
+        : `live:${safeLiveText}`;
+    const matches = await searchParagraphForSnippet(context, paragraph, snippet, {
+      lookupMemo: options?.lookupMemo,
+      snapshotKey,
+    });
     const range = matches?.items?.[Math.min(occurrenceIndex, (matches?.items?.length || 1) - 1)] || null;
     if (!range) {
       warn(`findUniqueExactSnippetRangeNearIndex(${reason}): range lookup failed`, {
@@ -3306,7 +3407,8 @@ async function findReplaceableRegionRangeNearIndex(
   liveText,
   replaceStart,
   replaceEnd,
-  reason = "replaceable-region"
+  reason = "replaceable-region",
+  options = {}
 ) {
   if (!paragraph || typeof paragraph.getRange !== "function") return null;
   const safeLiveText = typeof liveText === "string" ? liveText : "";
@@ -3344,7 +3446,8 @@ async function findReplaceableRegionRangeNearIndex(
     safeLiveText,
     snippet,
     searchStart,
-    reason
+    reason,
+    options
   );
   if (!range) return null;
   return {
@@ -6358,12 +6461,24 @@ async function findTokenRangeForAnchor(context, paragraph, anchorSnapshot, optio
   const tryFind = async (text, ordinalHint, variantOptions = {}) => {
     if (!text) return null;
     const wholeWord = WORD_CHAR_REGEX.test(text) && !/[^\p{L}\d]/u.test(text);
-    const matches = paragraph.getRange().search(text, {
-      matchCase: false,
-      matchWholeWord: wholeWord,
-    });
-    matches.load("items");
-    await context.sync();
+    const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+    const liveTextKey =
+      typeof options?.liveTextKey === "string" && options.liveTextKey
+        ? options.liveTextKey
+        : `live:${liveText}`;
+    const memoKey = lookupMemo ? `token-search|${liveTextKey}|${wholeWord ? "w" : "n"}|${text}` : null;
+    let matches = memoKey ? lookupMemo.get(memoKey) : null;
+    if (!matches) {
+      matches = paragraph.getRange().search(text, {
+        matchCase: false,
+        matchWholeWord: wholeWord,
+      });
+      matches.load("items");
+      await context.sync();
+      if (memoKey) {
+        lookupMemo.set(memoKey, matches);
+      }
+    }
     if (!matches.items.length) return null;
     const ordinal =
       typeof ordinalHint === "number"
@@ -6679,17 +6794,26 @@ async function resolveTokenPairRangesForAnchors(
   );
   if (!pairMatch) return null;
 
-  const beforeMatches = paragraph.getRange().search(pairMatch.beforeToken, {
-    matchCase: false,
-    matchWholeWord: true,
+  const snapshotKey =
+    typeof options?.liveTextKey === "string" && options.liveTextKey
+      ? options.liveTextKey
+      : `live:${liveText}`;
+  const beforeMatches = await searchParagraphForSnippet(context, paragraph, pairMatch.beforeToken, {
+    lookupMemo: options?.lookupMemo,
+    snapshotKey,
+    searchOptions: {
+      matchCase: false,
+      matchWholeWord: true,
+    },
   });
-  const afterMatches = paragraph.getRange().search(pairMatch.afterToken, {
-    matchCase: false,
-    matchWholeWord: true,
+  const afterMatches = await searchParagraphForSnippet(context, paragraph, pairMatch.afterToken, {
+    lookupMemo: options?.lookupMemo,
+    snapshotKey,
+    searchOptions: {
+      matchCase: false,
+      matchWholeWord: true,
+    },
   });
-  beforeMatches.load("items");
-  afterMatches.load("items");
-  await context.sync();
 
   const beforeCharEnd = pairMatch.beforeStart + pairMatch.beforeToken.length;
   const afterCharEnd = pairMatch.afterStart + pairMatch.afterToken.length;
@@ -6700,7 +6824,8 @@ async function resolveTokenPairRangesForAnchors(
     pairMatch.beforeStart,
     beforeCharEnd,
     "strict-token-pair-before",
-    pairMatch.beforeToken
+    pairMatch.beforeToken,
+    { lookupMemo: options?.lookupMemo, snapshotKey }
   );
   let afterRange = await getRangeForCharacterSpan(
     context,
@@ -6709,7 +6834,8 @@ async function resolveTokenPairRangesForAnchors(
     pairMatch.afterStart,
     afterCharEnd,
     "strict-token-pair-after",
-    pairMatch.afterToken
+    pairMatch.afterToken,
+    { lookupMemo: options?.lookupMemo, snapshotKey }
   );
   if (!beforeRange) {
     beforeRange = beforeMatches.items[pairMatch.beforeIndex] || null;
@@ -6741,7 +6867,8 @@ async function resolveStrictInsertRangeForSuggestion(
   paragraph,
   op,
   suggestion,
-  reason = "strict-insert"
+  reason = "strict-insert",
+  options = {}
 ) {
   const meta = suggestion?.meta?.anchor;
   if (!meta) {
@@ -6786,6 +6913,11 @@ async function resolveStrictInsertRangeForSuggestion(
     await context.sync();
   }
   const liveText = paragraph.text || "";
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+  const lookupSnapshotKey =
+    typeof options?.liveTextKey === "string" && options.liveTextKey
+      ? options.liveTextKey
+      : `desktop-strict-insert|p:${suggestion?.paragraphIndex ?? -1}|v:${liveText}`;
   const explicitQuoteIntent =
     normalizeQuoteBoundaryIntent(
       boundary?.explicitQuoteIntent ??
@@ -6861,6 +6993,8 @@ async function resolveStrictInsertRangeForSuggestion(
                 ? persistedBoundary.afterTokenOccurrence
                 : null,
             allowQuoteGap: true,
+            lookupMemo,
+            liveTextKey: lookupSnapshotKey,
           }
         )
       : null;
@@ -6869,6 +7003,8 @@ async function resolveStrictInsertRangeForSuggestion(
       ? await findTokenRangeForAnchor(context, paragraph, beforeAnchor, {
           sourceText: beforeHintIsLive ? "" : sourceText,
           liveText,
+          liveTextKey: lookupSnapshotKey,
+          lookupMemo,
           suggestion,
           preferEnd: true,
           hintIndex: boundary?.sourceBoundaryStart,
@@ -6881,6 +7017,8 @@ async function resolveStrictInsertRangeForSuggestion(
       ? await findTokenRangeForAnchor(context, paragraph, afterAnchor, {
           sourceText: afterHintIsLive ? "" : sourceText,
           liveText,
+          liveTextKey: lookupSnapshotKey,
+          lookupMemo,
           suggestion,
           hintIndex: boundary?.sourceBoundaryEnd,
           maxResolvedHintDrift: suggestion?.meta?.lemmaAnchorAuthoritative ? 24 : 16,
@@ -7610,7 +7748,8 @@ async function resolveStrictDeleteRangeForSuggestion(
   context,
   paragraph,
   suggestion,
-  reason = "strict-delete"
+  reason = "strict-delete",
+  options = {}
 ) {
   const meta = suggestion?.meta?.anchor;
   if (!meta) {
@@ -7621,6 +7760,11 @@ async function resolveStrictDeleteRangeForSuggestion(
     await context.sync();
   }
   const liveText = paragraph.text || "";
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+  const lookupSnapshotKey =
+    typeof options?.liveTextKey === "string" && options.liveTextKey
+      ? options.liveTextKey
+      : `desktop-strict-delete|p:${suggestion?.paragraphIndex ?? -1}|v:${liveText}`;
   const entry = anchorProvider.getAnchorsForParagraph(suggestion?.paragraphIndex);
   const sourceText = typeof entry?.originalText === "string" ? entry.originalText : liveText;
   const resolved = resolveDeleteOperationFromSnapshot(liveText, sourceText, suggestion);
@@ -7639,7 +7783,8 @@ async function resolveStrictDeleteRangeForSuggestion(
     liveText,
     commaIndex,
     commaIndex + 1,
-    `${reason}-region`
+    `${reason}-region`,
+    { lookupMemo, snapshotKey: lookupSnapshotKey }
   );
   if (deleteRegion) {
     return {
@@ -7656,7 +7801,8 @@ async function resolveStrictDeleteRangeForSuggestion(
     liveText,
     ",",
     commaIndex,
-    `${reason}-comma`
+    `${reason}-comma`,
+    { lookupMemo, snapshotKey: lookupSnapshotKey }
   );
   if (exactCommaRange) {
     return {
@@ -7674,7 +7820,8 @@ async function resolveStrictDeleteRangeForSuggestion(
     commaIndex,
     commaIndex + 1,
     `${reason}-span`,
-    ","
+    ",",
+    { lookupMemo, snapshotKey: lookupSnapshotKey }
   );
   if (commaRange) {
     return {
@@ -13327,6 +13474,7 @@ async function checkDocumentTextDesktop(checkToken) {
           };
 
           const deferredSuggestions = [];
+          const paragraphLookupMemo = new Map();
           for (let opIndex = 0; opIndex < plan.length; opIndex++) {
             const op = plan[opIndex];
             applyOpsAttempted++;
@@ -13349,7 +13497,8 @@ async function checkDocumentTextDesktop(checkToken) {
                   paragraph,
                   job.paragraphIndex,
                   sourceForPlan,
-                  op
+                  op,
+                  { lookupMemo: paragraphLookupMemo }
                 );
                 desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - directApplyStartedAt);
                 if (DESKTOP_VERBOSE_LOGS) {
@@ -13685,7 +13834,11 @@ async function checkDocumentTextDesktop(checkToken) {
                   paragraph,
                   deferredOp,
                   primaryDeferredSuggestion,
-                  "desktop-batch-step-strict-insert"
+                  "desktop-batch-step-strict-insert",
+                  {
+                    lookupMemo: paragraphLookupMemo,
+                    liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                  }
                 );
                 if (strictInsertResolution?.range) {
                   deferredRange = strictInsertResolution.range;
@@ -13712,7 +13865,11 @@ async function checkDocumentTextDesktop(checkToken) {
                   context,
                   paragraph,
                   primaryDeferredSuggestion,
-                  "desktop-batch-step-strict-delete"
+                  "desktop-batch-step-strict-delete",
+                  {
+                    lookupMemo: paragraphLookupMemo,
+                    liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                  }
                 );
                 if (strictDeleteResolution?.range) {
                   deferredRange = strictDeleteResolution.range;
