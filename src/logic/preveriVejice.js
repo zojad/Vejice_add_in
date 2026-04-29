@@ -6424,6 +6424,39 @@ async function findTokenRangeForAnchor(context, paragraph, anchorSnapshot, optio
     await context.sync();
   }
   const liveText = typeof options.liveText === "string" ? options.liveText : paragraph.text || "";
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+  const liveTextKey =
+    typeof options?.liveTextKey === "string" && options.liveTextKey
+      ? options.liveTextKey
+      : `live:${liveText}`;
+  const tokenSearchStates = new Map();
+  const pendingTokenSearchStates = [];
+  const buildTokenSearchStateKey = (text, wholeWord) => `${wholeWord ? "w" : "n"}|${text}`;
+  const registerTokenSearch = (text) => {
+    if (!text) return null;
+    const wholeWord = WORD_CHAR_REGEX.test(text) && !/[^\p{L}\d]/u.test(text);
+    const stateKey = buildTokenSearchStateKey(text, wholeWord);
+    if (tokenSearchStates.has(stateKey)) return stateKey;
+    const memoKey = lookupMemo ? `token-search|${liveTextKey}|${wholeWord ? "w" : "n"}|${text}` : null;
+    const cachedMatches = memoKey ? lookupMemo.get(memoKey) : null;
+    const state = {
+      text,
+      wholeWord,
+      memoKey,
+      matches: cachedMatches || null,
+      needsSync: !cachedMatches,
+    };
+    if (state.needsSync) {
+      state.matches = paragraph.getRange().search(text, {
+        matchCase: false,
+        matchWholeWord: wholeWord,
+      });
+      state.matches.load("items");
+      pendingTokenSearchStates.push(state);
+    }
+    tokenSearchStates.set(stateKey, state);
+    return stateKey;
+  };
   const fallbackOrdinal =
     typeof anchorSnapshot.textOccurrence === "number"
       ? anchorSnapshot.textOccurrence
@@ -6461,13 +6494,13 @@ async function findTokenRangeForAnchor(context, paragraph, anchorSnapshot, optio
   const tryFind = async (text, ordinalHint, variantOptions = {}) => {
     if (!text) return null;
     const wholeWord = WORD_CHAR_REGEX.test(text) && !/[^\p{L}\d]/u.test(text);
-    const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
-    const liveTextKey =
-      typeof options?.liveTextKey === "string" && options.liveTextKey
-        ? options.liveTextKey
-        : `live:${liveText}`;
-    const memoKey = lookupMemo ? `token-search|${liveTextKey}|${wholeWord ? "w" : "n"}|${text}` : null;
-    let matches = memoKey ? lookupMemo.get(memoKey) : null;
+    const stateKey = buildTokenSearchStateKey(text, wholeWord);
+    let state = tokenSearchStates.get(stateKey);
+    if (!state) {
+      registerTokenSearch(text);
+      state = tokenSearchStates.get(stateKey) || null;
+    }
+    let matches = state?.matches || null;
     if (!matches) {
       matches = paragraph.getRange().search(text, {
         matchCase: false,
@@ -6475,8 +6508,8 @@ async function findTokenRangeForAnchor(context, paragraph, anchorSnapshot, optio
       });
       matches.load("items");
       await context.sync();
-      if (memoKey) {
-        lookupMemo.set(memoKey, matches);
+      if (lookupMemo && state?.memoKey) {
+        lookupMemo.set(state.memoKey, matches);
       }
     }
     if (!matches.items.length) return null;
@@ -6566,6 +6599,27 @@ async function findTokenRangeForAnchor(context, paragraph, anchorSnapshot, optio
 
   const trimmed = anchorSnapshot.tokenText.trim();
   const preferRawTokenText = Boolean(options?.preferRawTokenText);
+  if (preferRawTokenText) {
+    registerTokenSearch(anchorSnapshot.tokenText);
+    if (trimmed && trimmed !== anchorSnapshot.tokenText) {
+      registerTokenSearch(trimmed);
+    }
+  } else {
+    if (trimmed && trimmed !== anchorSnapshot.tokenText) {
+      registerTokenSearch(trimmed);
+    }
+    registerTokenSearch(anchorSnapshot.tokenText);
+  }
+  if (pendingTokenSearchStates.length) {
+    await context.sync();
+    for (const state of pendingTokenSearchStates) {
+      state.needsSync = false;
+      if (lookupMemo && state.memoKey) {
+        lookupMemo.set(state.memoKey, state.matches);
+      }
+    }
+    pendingTokenSearchStates.length = 0;
+  }
   if (preferRawTokenText) {
     const rawResolved = await tryFind(anchorSnapshot.tokenText, anchorSnapshot.textOccurrence, options);
     if (rawResolved) return rawResolved;
@@ -6798,22 +6852,44 @@ async function resolveTokenPairRangesForAnchors(
     typeof options?.liveTextKey === "string" && options.liveTextKey
       ? options.liveTextKey
       : `live:${liveText}`;
-  const beforeMatches = await searchParagraphForSnippet(context, paragraph, pairMatch.beforeToken, {
-    lookupMemo: options?.lookupMemo,
-    snapshotKey,
-    searchOptions: {
-      matchCase: false,
-      matchWholeWord: true,
-    },
-  });
-  const afterMatches = await searchParagraphForSnippet(context, paragraph, pairMatch.afterToken, {
-    lookupMemo: options?.lookupMemo,
-    snapshotKey,
-    searchOptions: {
-      matchCase: false,
-      matchWholeWord: true,
-    },
-  });
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+  const snippetSearchOptions = {
+    matchCase: false,
+    matchWholeWord: true,
+    ignoreSpace: false,
+    ignorePunct: false,
+  };
+  const optionsKey = `${snippetSearchOptions.matchCase ? 1 : 0}:${snippetSearchOptions.matchWholeWord ? 1 : 0}:${
+    snippetSearchOptions.ignoreSpace ? 1 : 0
+  }:${snippetSearchOptions.ignorePunct ? 1 : 0}`;
+  const buildSnippetMemoKey = (snippet) => `search|${snapshotKey}|${optionsKey}|${snippet}`;
+  const ensureSnippetSearchMatches = (snippet) => {
+    if (typeof snippet !== "string" || !snippet.length) return null;
+    const memoKey = buildSnippetMemoKey(snippet);
+    const cached = lookupMemo ? lookupMemo.get(memoKey) : null;
+    if (cached) {
+      return { snippet, memoKey, matches: cached, needsSync: false };
+    }
+    const matches = paragraph.getRange().search(snippet, snippetSearchOptions);
+    matches.load("items");
+    return { snippet, memoKey, matches, needsSync: true };
+  };
+  const beforeSearch = ensureSnippetSearchMatches(pairMatch.beforeToken);
+  const afterSearch = ensureSnippetSearchMatches(pairMatch.afterToken);
+  const batchedSearches = [beforeSearch, afterSearch].filter(
+    (entry) => entry?.needsSync && entry?.matches
+  );
+  if (batchedSearches.length) {
+    await context.sync();
+    if (lookupMemo) {
+      for (const entry of batchedSearches) {
+        if (!entry?.memoKey) continue;
+        lookupMemo.set(entry.memoKey, entry.matches);
+      }
+    }
+  }
+  const beforeMatches = beforeSearch?.matches || null;
+  const afterMatches = afterSearch?.matches || null;
 
   const beforeCharEnd = pairMatch.beforeStart + pairMatch.beforeToken.length;
   const afterCharEnd = pairMatch.afterStart + pairMatch.afterToken.length;
@@ -13094,6 +13170,67 @@ async function checkDocumentTextDesktop(checkToken) {
     applyOpsMs: 0,
     cleanupMs: 0,
   };
+  const desktopSyncCounters = {
+    total: 0,
+    read: 0,
+    apply: 0,
+    unknown: 0,
+  };
+  const desktopApplySyncByScope = Object.create(null);
+  let activeDesktopSyncScope = null;
+  const withDesktopSyncScope = async (scope, fn) => {
+    const previousScope = activeDesktopSyncScope;
+    activeDesktopSyncScope = typeof scope === "string" && scope ? scope : previousScope;
+    try {
+      return await fn();
+    } finally {
+      activeDesktopSyncScope = previousScope;
+    }
+  };
+  const serializeDesktopApplySyncByScope = () => {
+    const entries = Object.entries(desktopApplySyncByScope).sort((a, b) => b[1] - a[1]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
+  const installDesktopSyncCounter = (context, phase) => {
+    if (!context || typeof context.sync !== "function") return () => {};
+    const originalSync = context.sync.bind(context);
+    let active = true;
+    const wrappedSync = async (...args) => {
+      if (active) {
+        desktopSyncCounters.total += 1;
+        if (Object.prototype.hasOwnProperty.call(desktopSyncCounters, phase)) {
+          desktopSyncCounters[phase] += 1;
+        } else {
+          desktopSyncCounters.unknown += 1;
+        }
+        if (phase === "apply" && activeDesktopSyncScope) {
+          desktopApplySyncByScope[activeDesktopSyncScope] =
+            (desktopApplySyncByScope[activeDesktopSyncScope] || 0) + 1;
+        }
+      }
+      return await originalSync(...args);
+    };
+    try {
+      context.sync = wrappedSync;
+      if (context.sync !== wrappedSync) {
+        return () => {
+          active = false;
+        };
+      }
+      return () => {
+        active = false;
+        try {
+          context.sync = originalSync;
+        } catch (_err) {
+          // ignore restore failures
+        }
+      };
+    } catch (_err) {
+      return () => {
+        active = false;
+      };
+    }
+  };
   let applyOpsAttempted = 0;
   let applyOpsQueued = 0;
   let applyOpsSkipped = 0;
@@ -13102,48 +13239,52 @@ async function checkDocumentTextDesktop(checkToken) {
     // Phase 1: read document state + paragraph text in a single Word batch.
     const readPhaseStartedAt = tnow();
     await Word.run(async (context) => {
-      logDesktopVerbose("Desktop phase: tracked-change guard:start");
-      if (await documentHasTrackedChanges(context)) {
-        notifyTrackedChangesPresent();
-        desktopCheckBlocked = true;
-        return;
-      }
-      logDesktopVerbose("Desktop phase: tracked-change guard:done");
-
-      // On desktop we require the user to enable Track Changes manually.
-      const doc = context.document;
+      const restoreSyncCounter = installDesktopSyncCounter(context, "read");
       try {
-        logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:start");
-        doc.load("trackRevisions");
-        await context.sync();
-        logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:done");
-        if (!doc.trackRevisions) {
+        logDesktopVerbose("Desktop phase: tracked-change guard:start");
+        if (await documentHasTrackedChanges(context)) {
+          notifyTrackedChangesPresent();
+          desktopCheckBlocked = true;
+          return;
+        }
+        logDesktopVerbose("Desktop phase: tracked-change guard:done");
+
+        // On desktop we require the user to enable Track Changes manually.
+        const doc = context.document;
+        try {
+          logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:start");
+          doc.load("trackRevisions");
+          await context.sync();
+          logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:done");
+          if (!doc.trackRevisions) {
+            notifyTrackChangesRequired();
+            desktopCheckBlocked = true;
+            return;
+          }
+        } catch (trackErr) {
+          warn("trackRevisions not available -> require manual enablement", trackErr);
           notifyTrackChangesRequired();
           desktopCheckBlocked = true;
           return;
         }
-      } catch (trackErr) {
-        warn("trackRevisions not available -> require manual enablement", trackErr);
-        notifyTrackChangesRequired();
-        desktopCheckBlocked = true;
-        return;
-      }
-
-      logDesktopVerbose("Desktop phase: getParagraphs:start");
-      const paras = await wordDesktopAdapter.getParagraphs(context);
-      logDesktopVerbose("Desktop phase: getParagraphs:done");
-      logDesktopVerbose("Paragraphs found:", paras.items.length);
-      let documentCharOffset = 0;
-      for (let idx = 0; idx < paras.items.length; idx++) {
-        const paragraph = paras.items[idx];
-        const sourceText = paragraph.text || "";
-        const snapshot = {
-          paragraphIndex: idx,
-          sourceText,
-          paragraphDocOffset: documentCharOffset,
-        };
-        paragraphSnapshots.push(snapshot);
-        documentCharOffset += sourceText.length + 1;
+        logDesktopVerbose("Desktop phase: getParagraphs:start");
+        const paras = await wordDesktopAdapter.getParagraphs(context);
+        logDesktopVerbose("Desktop phase: getParagraphs:done");
+        logDesktopVerbose("Paragraphs found:", paras.items.length);
+        let documentCharOffset = 0;
+        for (let idx = 0; idx < paras.items.length; idx++) {
+          const paragraph = paras.items[idx];
+          const sourceText = paragraph.text || "";
+          const snapshot = {
+            paragraphIndex: idx,
+            sourceText,
+            paragraphDocOffset: documentCharOffset,
+          };
+          paragraphSnapshots.push(snapshot);
+          documentCharOffset += sourceText.length + 1;
+        }
+      } finally {
+        restoreSyncCounter();
       }
     });
     desktopPhaseTiming.readMs = Math.max(0, tnow() - readPhaseStartedAt);
@@ -13162,6 +13303,9 @@ async function checkDocumentTextDesktop(checkToken) {
         desktopPhaseTiming: {
           ...desktopPhaseTiming,
           readMs: roundMs(desktopPhaseTiming.readMs),
+        },
+        desktopSyncCounters: {
+          ...desktopSyncCounters,
         },
       };
     }
@@ -13374,31 +13518,41 @@ async function checkDocumentTextDesktop(checkToken) {
     if (applyJobs.length) {
       const applyPhaseStartedAt = tnow();
       await Word.run(async (context) => {
-        logDesktopVerbose("Desktop phase: apply:start", { paragraphsWithSuggestions: applyJobs.length });
-        // Re-check tracked changes safety before mutating document.
-        if (await documentHasTrackedChanges(context)) {
-          notifyTrackedChangesPresent();
-          return;
-        }
-        const doc = context.document;
+        const restoreSyncCounter = installDesktopSyncCounter(context, "apply");
         try {
-          doc.load("trackRevisions");
-          await context.sync();
-          if (!doc.trackRevisions) {
+          logDesktopVerbose("Desktop phase: apply:start", { paragraphsWithSuggestions: applyJobs.length });
+          // Re-check tracked changes safety before mutating document.
+          if (
+            await withDesktopSyncScope("apply_guard_tracked_changes", () =>
+              documentHasTrackedChanges(context)
+            )
+          ) {
+            notifyTrackedChangesPresent();
+            return;
+          }
+          const doc = context.document;
+          try {
+            await withDesktopSyncScope("apply_guard_track_revisions", async () => {
+              doc.load("trackRevisions");
+              await context.sync();
+            });
+            if (!doc.trackRevisions) {
+              notifyTrackChangesRequired();
+              return;
+            }
+          } catch (trackErr) {
+            warn("trackRevisions unavailable during apply phase", trackErr);
             notifyTrackChangesRequired();
             return;
           }
-        } catch (trackErr) {
-          warn("trackRevisions unavailable during apply phase", trackErr);
-          notifyTrackChangesRequired();
-          return;
-        }
-        const paras = await wordDesktopAdapter.getParagraphs(context);
-        const deterministicMappingV2 = isDeterministicMappingV2Enabled();
-        if (!DESKTOP_DIRECT_INSERT_ENABLED) {
-          logDesktopVerbose("Desktop direct insert fast-path disabled");
-        }
-        for (const job of applyJobs) {
+          const paras = await withDesktopSyncScope("apply_get_paragraphs", () =>
+            wordDesktopAdapter.getParagraphs(context)
+          );
+          const deterministicMappingV2 = isDeterministicMappingV2Enabled();
+          if (!DESKTOP_DIRECT_INSERT_ENABLED) {
+            logDesktopVerbose("Desktop direct insert fast-path disabled");
+          }
+          for (const job of applyJobs) {
           const paragraph = paras.items[job.paragraphIndex];
           if (!paragraph) {
             warn("Desktop apply skipped: paragraph missing", {
@@ -13492,13 +13646,15 @@ async function checkDocumentTextDesktop(checkToken) {
                 isDesktopDirectInsertOp(op)
               ) {
                 const directApplyStartedAt = tnow();
-                const directStatus = await applyDesktopAuthoritativeInsertOp(
-                  context,
-                  paragraph,
-                  job.paragraphIndex,
-                  sourceForPlan,
-                  op,
-                  { lookupMemo: paragraphLookupMemo }
+                const directStatus = await withDesktopSyncScope("apply_direct_op", () =>
+                  applyDesktopAuthoritativeInsertOp(
+                    context,
+                    paragraph,
+                    job.paragraphIndex,
+                    sourceForPlan,
+                    op,
+                    { lookupMemo: paragraphLookupMemo }
+                  )
                 );
                 desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - directApplyStartedAt);
                 if (DESKTOP_VERBOSE_LOGS) {
@@ -13534,8 +13690,10 @@ async function checkDocumentTextDesktop(checkToken) {
           }
 
           if (deferredSuggestions.length) {
-            paragraph.load("text");
-            await context.sync();
+            await withDesktopSyncScope("apply_deferred_plan_refresh", async () => {
+              paragraph.load("text");
+              await context.sync();
+            });
             const currentSnapshotText = paragraph.text || "";
             const deferredPlanStartedAt = tnow();
             const {
@@ -13616,8 +13774,10 @@ async function checkDocumentTextDesktop(checkToken) {
               // Re-sync paragraph text each deferred step so range resolution uses live
               // content after previous queued operations (prevents drift on repeated tokens).
               try {
-                paragraph.load("text");
-                await context.sync();
+                await withDesktopSyncScope("apply_deferred_refresh", async () => {
+                  paragraph.load("text");
+                  await context.sync();
+                });
                 if (typeof paragraph.text === "string") {
                   deferredVirtualText = paragraph.text;
                 }
@@ -13829,16 +13989,18 @@ async function checkDocumentTextDesktop(checkToken) {
                 deferredOp?.insertLocation ??
                 (deferredOp.kind === "insert" ? Word.InsertLocation.before : Word.InsertLocation.replace);
               if (deferredOp?.kind === "insert" && primaryDeferredSuggestion) {
-                const strictInsertResolution = await resolveStrictInsertRangeForSuggestion(
-                  context,
-                  paragraph,
-                  deferredOp,
-                  primaryDeferredSuggestion,
-                  "desktop-batch-step-strict-insert",
-                  {
-                    lookupMemo: paragraphLookupMemo,
-                    liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
-                  }
+                const strictInsertResolution = await withDesktopSyncScope("apply_strict_insert", () =>
+                  resolveStrictInsertRangeForSuggestion(
+                    context,
+                    paragraph,
+                    deferredOp,
+                    primaryDeferredSuggestion,
+                    "desktop-batch-step-strict-insert",
+                    {
+                      lookupMemo: paragraphLookupMemo,
+                      liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                    }
+                  )
                 );
                 if (strictInsertResolution?.range) {
                   deferredRange = strictInsertResolution.range;
@@ -13861,15 +14023,17 @@ async function checkDocumentTextDesktop(checkToken) {
                   continue;
                 }
               } else if (deferredOp?.kind === "delete" && primaryDeferredSuggestion) {
-                const strictDeleteResolution = await resolveStrictDeleteRangeForSuggestion(
-                  context,
-                  paragraph,
-                  primaryDeferredSuggestion,
-                  "desktop-batch-step-strict-delete",
-                  {
-                    lookupMemo: paragraphLookupMemo,
-                    liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
-                  }
+                const strictDeleteResolution = await withDesktopSyncScope("apply_strict_delete", () =>
+                  resolveStrictDeleteRangeForSuggestion(
+                    context,
+                    paragraph,
+                    primaryDeferredSuggestion,
+                    "desktop-batch-step-strict-delete",
+                    {
+                      lookupMemo: paragraphLookupMemo,
+                      liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                    }
+                  )
                 );
                 if (strictDeleteResolution?.range) {
                   deferredRange = strictDeleteResolution.range;
@@ -13881,12 +14045,14 @@ async function checkDocumentTextDesktop(checkToken) {
                 }
               }
               if (!deferredRange) {
-                const deferredRangeResult = await getRangesForPlannedOperations(
-                  context,
-                  paragraph,
-                  deferredVirtualText,
-                  [deferredOp],
-                  "desktop-batch-step"
+                const deferredRangeResult = await withDesktopSyncScope("apply_planned_fallback", () =>
+                  getRangesForPlannedOperations(
+                    context,
+                    paragraph,
+                    deferredVirtualText,
+                    [deferredOp],
+                    "desktop-batch-step"
+                  )
                 );
                 deferredRange = Array.isArray(deferredRangeResult) ? deferredRangeResult[0] : null;
               }
@@ -13917,8 +14083,10 @@ async function checkDocumentTextDesktop(checkToken) {
                     }));
               if ((DESKTOP_VERBOSE_LOGS || expectedDeleteComma) && typeof deferredRange.load === "function") {
                 try {
-                  deferredRange.load("text");
-                  await context.sync();
+                  await withDesktopSyncScope("apply_range_text_check", async () => {
+                    deferredRange.load("text");
+                    await context.sync();
+                  });
                   deferredResolvedRangeText =
                     typeof deferredRange.text === "string" ? deferredRange.text : null;
                 } catch (rangeTextErr) {
@@ -13981,8 +14149,10 @@ async function checkDocumentTextDesktop(checkToken) {
               }
             }
             if (DESKTOP_VERBOSE_LOGS && deferredPlan.length) {
-              paragraph.load("text");
-              await context.sync();
+              await withDesktopSyncScope("apply_post_deferred_drift_check", async () => {
+                paragraph.load("text");
+                await context.sync();
+              });
               const postDeferredText = paragraph.text || "";
               const predictedText = typeof deferredVirtualText === "string" ? deferredVirtualText : "";
               const hasPredictedDoubleComma = /,\s*,/u.test(predictedText);
@@ -14046,11 +14216,13 @@ async function checkDocumentTextDesktop(checkToken) {
           if (appliedInParagraph) {
             try {
               const cleanupStartedAt = tnow();
-              await cleanupCommaSpacingForParagraphs(
-                context,
-                paras,
-                new Set([job.paragraphIndex]),
-                { force: true }
+              await withDesktopSyncScope("apply_cleanup", () =>
+                cleanupCommaSpacingForParagraphs(
+                  context,
+                  paras,
+                  new Set([job.paragraphIndex]),
+                  { force: true }
+                )
               );
               desktopPhaseTiming.cleanupMs += Math.max(0, tnow() - cleanupStartedAt);
             } catch (cleanupErr) {
@@ -14069,6 +14241,9 @@ async function checkDocumentTextDesktop(checkToken) {
           if (!paragraphCacheDisabled) {
             desktopParagraphAnalysisCache[job.paragraphIndex] = null;
           }
+          }
+        } finally {
+          restoreSyncCounter();
         }
       });
       desktopPhaseTiming.applyMs = Math.max(0, tnow() - applyPhaseStartedAt);
@@ -14148,7 +14323,17 @@ async function checkDocumentTextDesktop(checkToken) {
       "| phaseCleanupMs:",
       roundMs(desktopPhaseTiming.cleanupMs),
       "| phaseAnchorSeedMs:",
-      roundMs(desktopPhaseTiming.anchorSeedMs)
+      roundMs(desktopPhaseTiming.anchorSeedMs),
+      "| syncTotal:",
+      desktopSyncCounters.total,
+      "| syncRead:",
+      desktopSyncCounters.read,
+      "| syncApply:",
+      desktopSyncCounters.apply,
+      "| syncUnknown:",
+      desktopSyncCounters.unknown,
+      "| syncApplyByScope:",
+      serializeDesktopApplySyncByScope()
     );
     if (
       paragraphsProcessed > 0 &&
@@ -14188,6 +14373,12 @@ async function checkDocumentTextDesktop(checkToken) {
         applyPlanMs: roundMs(desktopPhaseTiming.applyPlanMs),
         applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
         cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
+      },
+      desktopSyncCounters: {
+        ...desktopSyncCounters,
+      },
+      desktopApplySyncByScope: {
+        ...desktopApplySyncByScope,
       },
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
@@ -14230,6 +14421,12 @@ async function checkDocumentTextDesktop(checkToken) {
         applyPlanMs: roundMs(desktopPhaseTiming.applyPlanMs),
         applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
         cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
+      },
+      desktopSyncCounters: {
+        ...desktopSyncCounters,
+      },
+      desktopApplySyncByScope: {
+        ...desktopApplySyncByScope,
       },
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
