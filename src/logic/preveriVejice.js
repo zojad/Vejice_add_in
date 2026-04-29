@@ -13755,6 +13755,62 @@ async function checkDocumentTextDesktop(checkToken) {
               });
             }
             deterministicPlannerSkips += countDeterministicSkippedReasons(deferredSkipped);
+            const buildDeferredOpCompatibilityKey = (op) => {
+              if (!op || typeof op !== "object") return "";
+              const boundary = op?.boundary || {};
+              const beforeToken = typeof boundary?.beforeToken === "string" ? boundary.beforeToken : "";
+              const afterToken = typeof boundary?.afterToken === "string" ? boundary.afterToken : "";
+              const sourceBoundaryStart = Number.isFinite(boundary?.sourceBoundaryStart)
+                ? Math.floor(boundary.sourceBoundaryStart)
+                : "na";
+              const sourceBoundaryEnd = Number.isFinite(boundary?.sourceBoundaryEnd)
+                ? Math.floor(boundary.sourceBoundaryEnd)
+                : "na";
+              const sourceBoundaryPos = Number.isFinite(boundary?.sourceBoundaryPos)
+                ? Math.floor(boundary.sourceBoundaryPos)
+                : "na";
+              const resolvedPos = Number.isFinite(boundary?.resolvedPos) ? Math.floor(boundary.resolvedPos) : "na";
+              const requestedPos = Number.isFinite(boundary?.requestedPos) ? Math.floor(boundary.requestedPos) : "na";
+              const start = Number.isFinite(op?.start) ? Math.floor(op.start) : "na";
+              const end = Number.isFinite(op?.end) ? Math.floor(op.end) : "na";
+              const pos = Number.isFinite(op?.pos) ? Math.floor(op.pos) : "na";
+              const replacement = typeof op?.replacement === "string" ? op.replacement : "";
+              const insertLocation = typeof op?.insertLocation === "string" ? op.insertLocation : "";
+              return [
+                op?.kind || "",
+                start,
+                end,
+                pos,
+                replacement,
+                insertLocation,
+                beforeToken,
+                afterToken,
+                sourceBoundaryStart,
+                sourceBoundaryEnd,
+                sourceBoundaryPos,
+                resolvedPos,
+                requestedPos,
+              ].join("|");
+            };
+            const coalesceCompatibleDeferredOperations = (ops) => {
+              if (!Array.isArray(ops) || ops.length <= 1) {
+                return { plan: Array.isArray(ops) ? ops : [], merged: 0 };
+              }
+              const reduced = [];
+              let merged = 0;
+              let prevKey = "";
+              for (const op of ops) {
+                const opKey = buildDeferredOpCompatibilityKey(op);
+                const prevOp = reduced.length ? reduced[reduced.length - 1] : null;
+                if (prevOp && opKey && opKey === prevKey) {
+                  merged++;
+                  continue;
+                }
+                reduced.push(op);
+                prevKey = opKey;
+              }
+              return { plan: reduced, merged };
+            };
             const applyOpToVirtualText = (text, op) => {
               if (typeof text !== "string" || !op || typeof op !== "object") return text;
               const startRaw =
@@ -13780,8 +13836,18 @@ async function checkDocumentTextDesktop(checkToken) {
             let deferredVirtualText = currentSnapshotText;
             // currentSnapshotText has just been synced; only refresh again after queued mutations.
             let deferredNeedsLiveRefresh = false;
-            for (let deferredIndex = 0; deferredIndex < deferredPlan.length; deferredIndex++) {
-              const deferredOp = deferredPlan[deferredIndex];
+            const coalescedDeferred = coalesceCompatibleDeferredOperations(deferredPlan);
+            if (coalescedDeferred.merged > 0 && DESKTOP_VERBOSE_LOGS) {
+              logDesktopVerbose("Desktop deferred coalesce", {
+                paragraphIndex: job.paragraphIndex,
+                before: deferredPlan.length,
+                after: coalescedDeferred.plan.length,
+                merged: coalescedDeferred.merged,
+              });
+            }
+            const deferredApplyPlan = coalescedDeferred.plan;
+            for (let deferredIndex = 0; deferredIndex < deferredApplyPlan.length; deferredIndex++) {
+              const deferredOp = deferredApplyPlan[deferredIndex];
               applyOpsAttempted++;
               const deferredOpSuggestions = getDeferredOpSuggestions(deferredOp);
               // Re-sync paragraph text each deferred step so range resolution uses live
@@ -14165,7 +14231,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 });
               }
             }
-            if (DESKTOP_VERBOSE_LOGS && deferredPlan.length) {
+            if (DESKTOP_VERBOSE_LOGS && deferredApplyPlan.length) {
               await withDesktopSyncScope("apply_post_deferred_drift_check", async () => {
                 paragraph.load("text");
                 await context.sync();
@@ -14184,7 +14250,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   break;
                 }
               }
-              const commaInsertOps = deferredPlan
+              const commaInsertOps = deferredApplyPlan
                 .map((op, opIndex) => ({ op, opIndex }))
                 .filter(({ op }) => op?.kind === "insert" && typeof op?.replacement === "string" && op.replacement.includes(","));
               const shouldLogDriftDiagnostic =
