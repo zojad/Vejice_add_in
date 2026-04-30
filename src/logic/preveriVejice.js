@@ -1885,6 +1885,7 @@ const ONLINE_PARAGRAPH_TIMEOUT_MS_DEFAULT = 20000;
 const ONLINE_ANALYZE_CONCURRENCY_DEFAULT = 1;
 const LOCAL_ONLINE_ANALYZE_CONCURRENCY_DEFAULT = 1;
 const DESKTOP_ANALYZE_CONCURRENCY_DEFAULT = 1;
+const DESKTOP_DEFERRED_REFRESH_EVERY_OPS_DEFAULT = 1;
 const ONLINE_MARKER_TAG_CLEANUP_BATCH_SIZE_DEFAULT = 30;
 const POST_APPLY_CHECK_COOLDOWN_MS_DEFAULT = 1200;
 const CHECK_ABORT_REASON_TIMEOUT = "check-timeout";
@@ -2009,6 +2010,18 @@ function resolveOnlineAnalyzeConcurrency() {
     : ONLINE_ANALYZE_CONCURRENCY_DEFAULT;
   const value = override ?? defaultValue;
   return Math.max(1, Math.min(value, 8));
+}
+
+function resolveDesktopDeferredRefreshEveryOps() {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_DESKTOP_DEFERRED_REFRESH_EVERY_OPS);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override = parsePositiveInteger(process.env?.VEJICE_DESKTOP_DEFERRED_REFRESH_EVERY_OPS);
+  }
+  const value = override ?? DESKTOP_DEFERRED_REFRESH_EVERY_OPS_DEFAULT;
+  return Math.max(1, Math.min(value, 12));
 }
 
 function resolveOnlineMarkerTagCleanupBatchSize() {
@@ -13167,6 +13180,7 @@ async function checkDocumentTextDesktop(checkToken) {
   let paragraphTimingMinMs = Number.POSITIVE_INFINITY;
   const paragraphCacheDisabled = isParagraphCacheDisabled();
   const desktopAnalyzeConcurrency = resolveDesktopAnalyzeConcurrency();
+  const desktopDeferredRefreshEveryOps = resolveDesktopDeferredRefreshEveryOps();
   const paragraphTimeoutMs = resolveOnlineParagraphTimeoutMs();
   const checkAbortController = getCheckAbortController(checkToken, { create: true });
   const checkAbortSignal = checkAbortController?.signal || null;
@@ -13556,8 +13570,18 @@ async function checkDocumentTextDesktop(checkToken) {
             notifyTrackChangesRequired();
             return;
           }
-          const paras = await withDesktopSyncScope("apply_get_paragraphs", () =>
-            wordDesktopAdapter.getParagraphs(context)
+          const paras = await withDesktopSyncScope("apply_get_paragraphs_items", () =>
+            wordDesktopAdapter.getParagraphCollection(context)
+          );
+          const applyParagraphIndexes = [
+            ...new Set(
+              applyJobs
+                .map((job) => (Number.isFinite(job?.paragraphIndex) ? job.paragraphIndex : -1))
+                .filter((idx) => idx >= 0)
+            ),
+          ];
+          await withDesktopSyncScope("apply_load_target_paragraph_text", () =>
+            wordDesktopAdapter.loadParagraphTexts(context, paras, applyParagraphIndexes)
           );
           const deterministicMappingV2 = isDeterministicMappingV2Enabled();
           if (!DESKTOP_DIRECT_INSERT_ENABLED) {
@@ -13834,8 +13858,10 @@ async function checkDocumentTextDesktop(checkToken) {
             const getDeferredOpSuggestions = (op) =>
               Array.isArray(op?.suggestions) ? op.suggestions.filter(Boolean) : [];
             let deferredVirtualText = currentSnapshotText;
-            // currentSnapshotText has just been synced; only refresh again after queued mutations.
+            // currentSnapshotText has just been synced. Refresh live text only after a few queued
+            // operations, or immediately when we had to use weaker fallback range resolution.
             let deferredNeedsLiveRefresh = false;
+            let deferredOpsSinceLiveRefresh = 0;
             const coalescedDeferred = coalesceCompatibleDeferredOperations(deferredPlan);
             if (coalescedDeferred.merged > 0 && DESKTOP_VERBOSE_LOGS) {
               logDesktopVerbose("Desktop deferred coalesce", {
@@ -13850,8 +13876,7 @@ async function checkDocumentTextDesktop(checkToken) {
               const deferredOp = deferredApplyPlan[deferredIndex];
               applyOpsAttempted++;
               const deferredOpSuggestions = getDeferredOpSuggestions(deferredOp);
-              // Re-sync paragraph text each deferred step so range resolution uses live
-              // content after previous queued operations (prevents drift on repeated tokens).
+              // Re-sync only when needed to limit Word roundtrips.
               if (deferredNeedsLiveRefresh) {
                 try {
                   await withDesktopSyncScope("apply_deferred_refresh", async () => {
@@ -13862,6 +13887,7 @@ async function checkDocumentTextDesktop(checkToken) {
                     deferredVirtualText = paragraph.text;
                   }
                   deferredNeedsLiveRefresh = false;
+                  deferredOpsSinceLiveRefresh = 0;
                 } catch (refreshErr) {
                   warnDesktopVerbose("Desktop deferred step text refresh failed", {
                     paragraphIndex: job.paragraphIndex,
@@ -14067,6 +14093,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   Number.isFinite(deferredOp?.boundary?.sourceBoundaryEnd)
               );
               let deferredRange = null;
+              let deferredRangeSource = "none";
               let deferredInsertLocation =
                 deferredOp?.insertLocation ??
                 (deferredOp.kind === "insert" ? Word.InsertLocation.before : Word.InsertLocation.replace);
@@ -14086,6 +14113,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 );
                 if (strictInsertResolution?.range) {
                   deferredRange = strictInsertResolution.range;
+                  deferredRangeSource = "strict_insert";
                   deferredInsertLocation =
                     strictInsertResolution.insertLocation ?? Word.InsertLocation.replace;
                   if (typeof strictInsertResolution.replacement === "string") {
@@ -14119,6 +14147,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 );
                 if (strictDeleteResolution?.range) {
                   deferredRange = strictDeleteResolution.range;
+                  deferredRangeSource = "strict_delete";
                   deferredInsertLocation =
                     strictDeleteResolution.insertLocation ?? Word.InsertLocation.replace;
                   if (typeof strictDeleteResolution.replacement === "string") {
@@ -14137,6 +14166,9 @@ async function checkDocumentTextDesktop(checkToken) {
                   )
                 );
                 deferredRange = Array.isArray(deferredRangeResult) ? deferredRangeResult[0] : null;
+                if (deferredRange) {
+                  deferredRangeSource = "planned_fallback";
+                }
               }
               if (!deferredRange) {
                 applyRangeMisses++;
@@ -14220,7 +14252,14 @@ async function checkDocumentTextDesktop(checkToken) {
                 applyOpsQueued++;
                 desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - opApplyStartedAt);
                 deferredVirtualText = applyOpToVirtualText(deferredVirtualText, deferredOp);
-                deferredNeedsLiveRefresh = true;
+                deferredOpsSinceLiveRefresh += 1;
+                const shouldForceDeferredRefresh = deferredRangeSource === "planned_fallback";
+                if (
+                  shouldForceDeferredRefresh ||
+                  deferredOpsSinceLiveRefresh >= desktopDeferredRefreshEveryOps
+                ) {
+                  deferredNeedsLiveRefresh = true;
+                }
               } catch (err) {
                 applyOpFailures++;
                 warn("Desktop batch op failed", {
