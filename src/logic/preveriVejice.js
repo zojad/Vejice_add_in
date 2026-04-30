@@ -7417,10 +7417,10 @@ async function resolveStrictInsertRangeForSuggestion(
     });
   }
   if (beforeAnchorIsPunctuationOnly && afterAnchorWordToken && typeof liveText === "string" && liveText.length) {
-    const punctuationPositions = findAllExactSnippetOccurrences(liveText, beforeAnchorRawToken).filter(
+    const punctuationPositionsAll = findAllExactSnippetOccurrences(liveText, beforeAnchorRawToken).filter(
       (idx) => Number.isFinite(idx) && idx >= 0
     );
-    const afterPositions = getWordTokenPositionsInText(liveText, afterAnchorWordToken).filter(
+    const afterPositionsAll = getWordTokenPositionsInText(liveText, afterAnchorWordToken).filter(
       (idx) => Number.isFinite(idx) && idx >= 0
     );
     const preferredBoundaryHint = Number.isFinite(preferredLiveHint)
@@ -7430,20 +7430,33 @@ async function resolveStrictInsertRangeForSuggestion(
         : Number.isFinite(beforeStart) && beforeStart >= 0
           ? beforeStart
           : -1;
+    const PUNCTUATION_BEFORE_WORD_HINT_WINDOW_CHARS = 96;
+    const filterByHintWindow = (positions = []) => {
+      if (!Number.isFinite(preferredBoundaryHint) || preferredBoundaryHint < 0) {
+        return positions;
+      }
+      const filtered = positions.filter(
+        (idx) => Math.abs(idx - preferredBoundaryHint) <= PUNCTUATION_BEFORE_WORD_HINT_WINDOW_CHARS
+      );
+      return filtered.length ? filtered : positions;
+    };
+    const punctuationPositions = filterByHintWindow(punctuationPositionsAll);
+    const afterPositions = filterByHintWindow(afterPositionsAll);
+    const punctuationEndToStart = new Map();
+    for (const punctIdx of punctuationPositions) {
+      const punctEnd = punctIdx + beforeAnchorRawToken.length - 1;
+      if (!Number.isFinite(punctEnd) || punctEnd < 0) continue;
+      if (!punctuationEndToStart.has(punctEnd)) {
+        punctuationEndToStart.set(punctEnd, punctIdx);
+      }
+    }
     let bestMatch = null;
     for (const candidateAfterStart of afterPositions) {
       let scan = candidateAfterStart - 1;
       while (scan >= 0 && /\s/u.test(liveText[scan] || "")) scan--;
       if (scan < 0) continue;
-      let punctuationStart = -1;
-      for (const punctIdx of punctuationPositions) {
-        const punctEnd = punctIdx + beforeAnchorRawToken.length - 1;
-        if (punctEnd === scan) {
-          punctuationStart = punctIdx;
-          break;
-        }
-      }
-      if (punctuationStart < 0) continue;
+      const punctuationStart = punctuationEndToStart.has(scan) ? punctuationEndToStart.get(scan) : -1;
+      if (!Number.isFinite(punctuationStart) || punctuationStart < 0) continue;
       const boundaryPos = punctuationStart + beforeAnchorRawToken.length;
       const score =
         preferredBoundaryHint >= 0 ? Math.abs(boundaryPos - preferredBoundaryHint) : candidateAfterStart;
@@ -7513,8 +7526,10 @@ async function resolveStrictInsertRangeForSuggestion(
         traceId: suggestion?.meta?.op?.traceId ?? null,
         punctuationToken: beforeAnchorRawToken,
         afterToken: afterAnchorWordToken,
-        punctuationCandidates: punctuationPositions.length,
-        afterCandidates: afterPositions.length,
+        punctuationCandidates: punctuationPositionsAll.length,
+        afterCandidates: afterPositionsAll.length,
+        punctuationCandidatesFiltered: punctuationPositions.length,
+        afterCandidatesFiltered: afterPositions.length,
       });
     }
   }
@@ -7856,6 +7871,18 @@ async function resolveStrictInsertRangeForSuggestion(
     let anchorIndex = safeEnd - 1;
     while (anchorIndex >= beforeStart && /[\s\u200B-\u200D\uFEFF]/u.test(liveText[anchorIndex] || "")) {
       anchorIndex--;
+    }
+    const beforeTokenLength =
+      typeof beforeText === "string" && beforeText.length
+        ? beforeText.length
+        : typeof beforeResolved?.tokenText === "string" && beforeResolved.tokenText.length
+          ? beforeResolved.tokenText.length
+          : 1;
+    const beforeRangeAnchorIndex = beforeStart + Math.max(1, beforeTokenLength) - 1;
+    if (anchorIndex === beforeRangeAnchorIndex) {
+      // Fast path: resolved anchor points to the same trailing character as the
+      // already-resolved beforeRange; avoid another char-span lookup/sync.
+      return beforeRange;
     }
     // Keep original range unless we explicitly moved the boundary or trimmed trailing gap chars.
     if (anchorIndex < beforeStart || (anchorIndex === safeEnd - 1 && !boundaryExtended)) {
@@ -13428,6 +13455,10 @@ async function checkDocumentTextDesktop(checkToken) {
   const desktopApplySyncByScope = Object.create(null);
   const desktopApplySyncTimingByScope = Object.create(null);
   const desktopCleanupTimingByParagraph = Object.create(null);
+  const desktopDeferredCommitTimingByParagraph = Object.create(null);
+  const desktopDeferredCommitCountByParagraph = Object.create(null);
+  const desktopStrictDeleteTimingByParagraph = Object.create(null);
+  const desktopStrictDeleteCountByParagraph = Object.create(null);
   let activeDesktopSyncScope = null;
   const withDesktopSyncScope = async (scope, fn) => {
     const previousScope = activeDesktopSyncScope;
@@ -13458,6 +13489,30 @@ async function checkDocumentTextDesktop(checkToken) {
     const entries = Object.entries(desktopCleanupTimingByParagraph)
       .sort((a, b) => Number(a[0]) - Number(b[0]))
       .map(([paragraphIndex, ms]) => [paragraphIndex, roundMs(ms)]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
+  const serializeDesktopDeferredCommitByParagraph = () => {
+    const entries = Object.keys(desktopDeferredCommitTimingByParagraph)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((paragraphIndex) => [
+        paragraphIndex,
+        {
+          ms: roundMs(desktopDeferredCommitTimingByParagraph[paragraphIndex] || 0),
+          count: desktopDeferredCommitCountByParagraph[paragraphIndex] || 0,
+        },
+      ]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
+  const serializeDesktopStrictDeleteByParagraph = () => {
+    const entries = Object.keys(desktopStrictDeleteTimingByParagraph)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((paragraphIndex) => [
+        paragraphIndex,
+        {
+          ms: roundMs(desktopStrictDeleteTimingByParagraph[paragraphIndex] || 0),
+          count: desktopStrictDeleteCountByParagraph[paragraphIndex] || 0,
+        },
+      ]);
     return JSON.stringify(Object.fromEntries(entries));
   };
   const installDesktopSyncCounter = (context, phase) => {
@@ -14289,8 +14344,12 @@ async function checkDocumentTextDesktop(checkToken) {
                     meta?.sourceTokenAfter ??
                     meta?.targetTokenAfter ??
                     null;
-                  queueSnippetSearch(cleanTokenFromAnchorLike(beforeAnchor));
-                  queueSnippetSearch(cleanTokenFromAnchorLike(afterAnchor));
+                  const beforeToken = cleanTokenFromAnchorLike(beforeAnchor);
+                  const afterToken = cleanTokenFromAnchorLike(afterAnchor);
+                  if (beforeToken && afterToken) {
+                    queueSnippetSearch(beforeToken);
+                    queueSnippetSearch(afterToken);
+                  }
                 }
               }
               if (!pending.length) return;
@@ -14565,6 +14624,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   continue;
                 }
               } else if (shouldAttemptStrictDelete) {
+                const strictDeleteStartedAt = tnow();
                 const strictDeleteResolution = await withDesktopSyncScope("apply_strict_delete", () =>
                   resolveStrictDeleteRangeForSuggestion(
                     context,
@@ -14578,6 +14638,11 @@ async function checkDocumentTextDesktop(checkToken) {
                     }
                   )
                 );
+                const strictDeleteElapsedMs = Math.max(0, tnow() - strictDeleteStartedAt);
+                desktopStrictDeleteTimingByParagraph[job.paragraphIndex] =
+                  (desktopStrictDeleteTimingByParagraph[job.paragraphIndex] || 0) + strictDeleteElapsedMs;
+                desktopStrictDeleteCountByParagraph[job.paragraphIndex] =
+                  (desktopStrictDeleteCountByParagraph[job.paragraphIndex] || 0) + 1;
                 if (strictDeleteResolution?.range) {
                   deferredRange = strictDeleteResolution.range;
                   deferredInsertLocation =
@@ -14727,7 +14792,14 @@ async function checkDocumentTextDesktop(checkToken) {
                     await context.sync();
                   });
                 }
-                desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - deferredCommitStartedAt);
+                const deferredCommitElapsedMs = Math.max(0, tnow() - deferredCommitStartedAt);
+                desktopPhaseTiming.applyOpsMs += deferredCommitElapsedMs;
+                if (commitReadyMutations.length) {
+                  desktopDeferredCommitTimingByParagraph[job.paragraphIndex] =
+                    (desktopDeferredCommitTimingByParagraph[job.paragraphIndex] || 0) + deferredCommitElapsedMs;
+                  desktopDeferredCommitCountByParagraph[job.paragraphIndex] =
+                    (desktopDeferredCommitCountByParagraph[job.paragraphIndex] || 0) + 1;
+                }
                 for (const mutation of commitReadyMutations) {
                   countAppliedSuggestions(mutation.op);
                   applyOpsQueued++;
@@ -14965,7 +15037,11 @@ async function checkDocumentTextDesktop(checkToken) {
       "| syncApplyTimingByScope:",
       serializeDesktopApplySyncTimingByScope(),
       "| cleanupByParagraphMs:",
-      serializeDesktopCleanupTimingByParagraph()
+      serializeDesktopCleanupTimingByParagraph(),
+      "| deferredCommitByParagraph:",
+      serializeDesktopDeferredCommitByParagraph(),
+      "| strictDeleteByParagraph:",
+      serializeDesktopStrictDeleteByParagraph()
     );
     if (
       paragraphsProcessed > 0 &&
@@ -15062,6 +15138,28 @@ async function checkDocumentTextDesktop(checkToken) {
           roundMs(ms),
         ])
       ),
+      desktopDeferredCommitByParagraph: Object.fromEntries(
+        Object.keys(desktopDeferredCommitTimingByParagraph)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((paragraphIndex) => [
+            paragraphIndex,
+            {
+              ms: roundMs(desktopDeferredCommitTimingByParagraph[paragraphIndex] || 0),
+              count: desktopDeferredCommitCountByParagraph[paragraphIndex] || 0,
+            },
+          ])
+      ),
+      desktopStrictDeleteByParagraph: Object.fromEntries(
+        Object.keys(desktopStrictDeleteTimingByParagraph)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((paragraphIndex) => [
+            paragraphIndex,
+            {
+              ms: roundMs(desktopStrictDeleteTimingByParagraph[paragraphIndex] || 0),
+              count: desktopStrictDeleteCountByParagraph[paragraphIndex] || 0,
+            },
+          ])
+      ),
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
@@ -15110,6 +15208,28 @@ async function checkDocumentTextDesktop(checkToken) {
       desktopApplySyncByScope: {
         ...desktopApplySyncByScope,
       },
+      desktopDeferredCommitByParagraph: Object.fromEntries(
+        Object.keys(desktopDeferredCommitTimingByParagraph)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((paragraphIndex) => [
+            paragraphIndex,
+            {
+              ms: roundMs(desktopDeferredCommitTimingByParagraph[paragraphIndex] || 0),
+              count: desktopDeferredCommitCountByParagraph[paragraphIndex] || 0,
+            },
+          ])
+      ),
+      desktopStrictDeleteByParagraph: Object.fromEntries(
+        Object.keys(desktopStrictDeleteTimingByParagraph)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((paragraphIndex) => [
+            paragraphIndex,
+            {
+              ms: roundMs(desktopStrictDeleteTimingByParagraph[paragraphIndex] || 0),
+              count: desktopStrictDeleteCountByParagraph[paragraphIndex] || 0,
+            },
+          ])
+      ),
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
