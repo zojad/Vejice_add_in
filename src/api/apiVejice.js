@@ -1,4 +1,4 @@
-/* global window, process, performance, console, setTimeout */
+/* global window, process, performance, console, setTimeout, navigator */
 // src/api/apiVejice.js
 import axios from "axios";
 import { isWordOnline } from "../utils/host.js";
@@ -179,6 +179,14 @@ function isAbortLikeError(err, signal) {
   const code = typeof err?.code === "string" ? err.code.toUpperCase() : "";
   const name = typeof err?.name === "string" ? err.name : "";
   return code === "ERR_CANCELED" || name === "AbortError" || name === "CanceledError";
+}
+
+function isBrowserOffline() {
+  try {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+  } catch (_err) {
+    return false;
+  }
 }
 
 const envMockFlag =
@@ -1878,6 +1886,16 @@ async function requestPopravek(poved, options = {}) {
   if (USE_MOCK) {
     log("Mock API ->", snip(poved));
     return mockRequestPopravljenPoved(poved);
+  }
+  if (isBrowserOffline()) {
+    throw new VejiceApiError("Vejice API call failed (browser offline)", {
+      info: {
+        status: null,
+        code: "ERR_NETWORK",
+        msg: "Browser is offline",
+      },
+      offline: true,
+    });
   }
   if (!API_URL) {
     throw new VejiceApiError("Missing VEJICE_API_URL configuration");

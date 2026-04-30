@@ -1,4 +1,4 @@
-/* global Word, window, process, performance, console, Office, URL, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__ */
+/* global Word, window, process, performance, console, Office, URL, navigator, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__ */
 import { popraviPoved, popraviPovedDetailed } from "../api/apiVejice.js";
 import { isWordOnline } from "../utils/host.js";
 import { CommaSuggestionEngine } from "./engine/CommaSuggestionEngine.js";
@@ -317,7 +317,9 @@ const PARAGRAPH_NON_COMMA_MESSAGE = "V nekaterih delih besedila predlogi niso bi
 const TRACKED_CHANGES_PRESENT_MESSAGE = "Najprej sprejmite ali zavrnite obstoje\u010de spremembe (Track Changes) in nato ponovno za\u017eenite preverjanje.";
 const TRACK_CHANGES_REQUIRED_MESSAGE = "Vklju\u010dite Sledenje spremembam (Track Changes) in poskusite znova.";
 const API_UNAVAILABLE_MESSAGE =
-  "Storitev CJVT Vejice trenutno ni na voljo. Znova poskusite kasneje.";
+  "Storitev CJVT Vejice trenutno ni na voljo. Poskusite kasneje.";
+const OFFLINE_DURING_CHECK_MESSAGE =
+  "Ni internetne povezave. Preverite povezavo in poskusite znova.";
 const NO_ISSUES_FOUND_MESSAGE = "Ni bilo najdenih manjkajo\u010dih ali napa\u010dnih vejic.";
 const MARKER_RENDER_FAILED_MESSAGE = "Napake so bile najdene, vendar jih ni bilo mogo\u010de ozna\u010diti.";
 const PARAGRAPH_TIMEOUT_MESSAGE = "Nekateri odstavki niso bili pregledani zaradi \u010dasovne omejitve.";
@@ -1884,10 +1886,11 @@ const CHECK_ABORT_REASON_TIMEOUT = "check-timeout";
 const CHECK_ABORT_REASON_CANCELLED = "check-cancelled";
 const CHECK_ABORT_REASON_SUPERSEDED = "check-superseded";
 const CHECK_ABORT_REASON_PARAGRAPH_TIMEOUT = "paragraph-timeout";
+const CHECK_ABORT_REASON_CONNECTIVITY = "connectivity-loss";
 const CHECK_TIMEOUT_MESSAGE = "Pregled je bil prekinjen zaradi \u010dasovne omejitve. Poskusite znova.";
 const CHECK_CANCELLED_MESSAGE = "Pregled je bil prekinjen.";
 const POST_APPLY_COOLDOWN_MESSAGE =
-  "Dokument se se usklajuje po samodejnih popravkih. Poskusite znova cez trenutek.";
+  "Dokument se \u0161e usklajuje po samodejnih popravkih. Poskusite znova \u010dez trenutek.";
 const CLEAR_CHUNK_CACHE_AFTER_FIRST_SCAN_DEFAULT = true;
 let actionSequence = 0;
 const checkAbortControllersByTokenId = new Map();
@@ -2331,6 +2334,23 @@ function queueScanNotification(message, level = "info") {
   });
 }
 
+function removeQueuedScanNotification(message, level = null) {
+  const normalizedMessage = typeof message === "string" ? message.trim() : "";
+  if (!normalizedMessage || !pendingScanNotifications.length) return;
+  const normalizedLevel =
+    typeof level === "string" && level.trim() ? normalizeNotificationLevel(level, null) : null;
+  for (let i = pendingScanNotifications.length - 1; i >= 0; i--) {
+    const entry = pendingScanNotifications[i];
+    const entryMessage = typeof entry?.message === "string" ? entry.message.trim() : "";
+    if (entryMessage !== normalizedMessage) continue;
+    if (normalizedLevel) {
+      const entryLevel = normalizeNotificationLevel(entry?.level, "info");
+      if (entryLevel !== normalizedLevel) continue;
+    }
+    pendingScanNotifications.splice(i, 1);
+  }
+}
+
 function queueLongParagraphSummaryNotification() {
   if (!longParagraphNotificationIndexes.size) return;
   const labels = Array.from(longParagraphNotificationIndexes)
@@ -2355,6 +2375,10 @@ function queueLongParagraphSummaryNotification() {
 
 function flushScanNotifications() {
   queueLongParagraphSummaryNotification();
+  if (apiFailureNotified) {
+    removeQueuedScanNotification(CHUNK_API_ERROR_MESSAGE, "warn");
+    emittedScanNotificationKeys.delete(`warn:${CHUNK_API_ERROR_MESSAGE}`);
+  }
   if (!pendingScanNotifications.length) return;
   const seen = new Set();
   const uniqueEntries = [];
@@ -2414,12 +2438,82 @@ function extractApiFailureMeta(error) {
         ? error.code
         : null;
   const reason =
-    typeof error?.message === "string" && error.message
-      ? error.message
-      : typeof info?.msg === "string" && info.msg
-        ? info.msg
-        : null;
+    typeof info?.msg === "string" && info.msg
+      ? info.msg
+      : typeof meta?.cause?.message === "string" && meta.cause.message
+        ? meta.cause.message
+        : typeof error?.message === "string" && error.message
+          ? error.message
+          : null;
   return { status, code, reason };
+}
+
+function isApiUnavailableFailure(error, failure = null) {
+  const safeFailure = failure || extractApiFailureMeta(error);
+  const meta = error?.meta || {};
+  if (meta?.circuitOpen === true) return true;
+  const status = Number.isFinite(safeFailure?.status) ? safeFailure.status : null;
+  if (status === 408 || status === 429 || status === 502 || status === 503 || status === 504) {
+    return true;
+  }
+  const rawCodes = [
+    safeFailure?.code,
+    meta?.info?.code,
+    meta?.cause?.code,
+    error?.code,
+    error?.cause?.code,
+  ];
+  for (const rawCode of rawCodes) {
+    const code = typeof rawCode === "string" ? rawCode.toUpperCase() : "";
+    if (
+      code === "ERR_NETWORK" ||
+      code === "ECONNREFUSED" ||
+      code === "ECONNRESET" ||
+      code === "ECONNABORTED" ||
+      code === "ETIMEDOUT" ||
+      code === "EAI_AGAIN" ||
+      code === "ENOTFOUND" ||
+      code === "EPIPE"
+    ) {
+      return true;
+    }
+  }
+  const reasonCandidates = [
+    safeFailure?.reason,
+    meta?.info?.msg,
+    meta?.cause?.message,
+    error?.message,
+    error?.cause?.message,
+  ];
+  for (const candidate of reasonCandidates) {
+    const reasonUpper = typeof candidate === "string" ? candidate.toUpperCase() : "";
+    if (!reasonUpper) continue;
+    if (
+      reasonUpper.includes("ERR_CONNECTION_REFUSED") ||
+      reasonUpper.includes("NETWORK ERROR") ||
+      reasonUpper.includes("FAILED TO FETCH") ||
+      reasonUpper.includes("BROWSER IS OFFLINE") ||
+      reasonUpper.includes("OFFLINE")
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function isBrowserOffline() {
+  try {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+  } catch (_err) {
+    return false;
+  }
+}
+
+function cancelActiveCheckForConnectivityLoss() {
+  if (activeActionState?.type !== ACTION_TYPE_CHECK) return;
+  const token = activeActionState?.token;
+  if (!token || token.cancelled) return;
+  cancelActionToken(token, CHECK_ABORT_REASON_CONNECTIVITY);
 }
 
 function notifyChunkApiFailure(paragraphIndex, chunkIndex, error = null) {
@@ -2443,6 +2537,13 @@ function notifyChunkApiFailure(paragraphIndex, chunkIndex, error = null) {
     code: failure.code,
     reason: failure.reason,
   });
+  const offline = isBrowserOffline();
+  if (offline || isApiUnavailableFailure(error, failure)) {
+    notifyApiUnavailable({ offline });
+    cancelActiveCheckForConnectivityLoss();
+    return;
+  }
+  if (apiFailureNotified) return;
   if (chunkApiFailureNotified) return;
   chunkApiFailureNotified = true;
   queueScanNotification(CHUNK_API_ERROR_MESSAGE, "warn");
@@ -2543,11 +2644,14 @@ function notifyTrackChangesRequired() {
 }
 
 let apiFailureNotified = false;
-function notifyApiUnavailable() {
+function notifyApiUnavailable({ offline = false } = {}) {
   if (apiFailureNotified) return;
   apiFailureNotified = true;
-  warn("API unavailable - notifying taskpane");
-  queueScanNotification(API_UNAVAILABLE_MESSAGE, "error");
+  removeQueuedScanNotification(CHUNK_API_ERROR_MESSAGE, "warn");
+  emittedScanNotificationKeys.delete(`warn:${CHUNK_API_ERROR_MESSAGE}`);
+  const message = offline ? OFFLINE_DURING_CHECK_MESSAGE : API_UNAVAILABLE_MESSAGE;
+  warn("API unavailable - notifying taskpane", { offline });
+  queueScanNotification(message, "error");
 }
 
 function notifyNoIssuesFound() {
@@ -12372,7 +12476,7 @@ export async function applySuggestionOnlineById(suggestionId = null) {
 
   const scanCompleted = await waitForOnlineScanCompletion();
   if (!scanCompleted) {
-    queueScanNotification("PoÄakajte, da se pregled dokumenta zakljuÄi, nato poskusite znova.", "warn");
+    queueScanNotification("Po\u010dakajte, da se pregled dokumenta zaklju\u010di, nato poskusite znova.", "warn");
     flushScanNotifications();
     return finalize("deferred", "scan-in-progress");
   }
@@ -12727,7 +12831,7 @@ export async function rejectSuggestionOnlineById(suggestionId = null) {
 
   const scanCompleted = await waitForOnlineScanCompletion();
   if (!scanCompleted) {
-    queueScanNotification("PoÄakajte, da se pregled dokumenta zakljuÄi, nato poskusite znova.", "warn");
+    queueScanNotification("Po\u010dakajte, da se pregled dokumenta zaklju\u010di, nato poskusite znova.", "warn");
     flushScanNotifications();
     return finalize("deferred", "scan-in-progress");
   }
@@ -15124,6 +15228,15 @@ async function checkDocumentTextDesktop(checkToken) {
       DESKTOP_VERBOSE_LOGS
     );
     if (
+      !apiFailureNotified &&
+      apiErrors > 0 &&
+      suggestionsDetected === 0 &&
+      totalInserted === 0 &&
+      totalDeleted === 0
+    ) {
+      notifyApiUnavailable({ offline: isBrowserOffline() });
+    }
+    if (
       paragraphsProcessed > 0 &&
       suggestionsDetected === 0 &&
       totalInserted === 0 &&
@@ -15270,6 +15383,8 @@ async function checkDocumentTextDesktop(checkToken) {
     if (e instanceof CheckAbortError && e.reason === CHECK_ABORT_REASON_TIMEOUT) {
       warn("checkDocumentTextDesktop stopped due to timeout");
       queueScanNotification(CHECK_TIMEOUT_MESSAGE, "error");
+    } else if (e instanceof CheckAbortError && e.reason === CHECK_ABORT_REASON_CONNECTIVITY) {
+      warn("checkDocumentTextDesktop stopped due to connectivity loss");
     } else if (e instanceof CheckAbortError) {
       warn("checkDocumentTextDesktop cancelled", e.reason);
       queueScanNotification(CHECK_CANCELLED_MESSAGE, "warn");
@@ -15392,6 +15507,9 @@ async function checkDocumentTextOnline(checkToken) {
   const checkAbortSignal = checkAbortController?.signal || null;
   const previousPendingSuggestionsSnapshot = [...pendingSuggestionsOnline];
   const reconciledParagraphIndexes = new Set();
+  if (typeof commaEngine?.clearTransientFailureState === "function") {
+    commaEngine.clearTransientFailureState();
+  }
 
   try {
     await Word.run(async (context) => {
@@ -16171,6 +16289,14 @@ async function checkDocumentTextOnline(checkToken) {
       JSON.stringify(skippedSegmentsSample)
     );
     if (
+      !apiFailureNotified &&
+      apiErrors > 0 &&
+      suggestionsDetected === 0 &&
+      suggestions === 0
+    ) {
+      notifyApiUnavailable({ offline: isBrowserOffline() });
+    }
+    if (
       paragraphsProcessed > 0 &&
       suggestionsDetected > 0 &&
       suggestions === 0 &&
@@ -16186,6 +16312,8 @@ async function checkDocumentTextOnline(checkToken) {
     if (e instanceof CheckAbortError && e.reason === CHECK_ABORT_REASON_TIMEOUT) {
       warn("checkDocumentTextOnline stopped due to timeout");
       queueScanNotification(CHECK_TIMEOUT_MESSAGE, "error");
+    } else if (e instanceof CheckAbortError && e.reason === CHECK_ABORT_REASON_CONNECTIVITY) {
+      warn("checkDocumentTextOnline stopped due to connectivity loss");
     } else if (e instanceof CheckAbortError) {
       warn("checkDocumentTextOnline cancelled", e.reason);
       queueScanNotification(CHECK_CANCELLED_MESSAGE, "warn");

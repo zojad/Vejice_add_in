@@ -347,7 +347,7 @@ const refreshPendingStatus = () => {
     setStatus("");
     return;
   }
-  setStatus(`Koncano. Predlogi: ${pending.length}.`);
+  setStatus(`Kon\u010dano. Predlogi: ${pending.length}.`);
 };
 
 const flushUiRefresh = ({ forceNotifications = false, includePendingStatus = false } = {}) => {
@@ -400,7 +400,12 @@ const runCheck = async () => {
   clearTaskpaneNotifications();
   scheduleUiRefresh({ forceNotifications: true, immediate: true });
   if (isOffline()) {
-    setStatus(`${CHECK_GENERIC_ERROR_MESSAGE} ${CHECK_OFFLINE_HINT_MESSAGE}`);
+    const offlineMessage = `${CHECK_GENERIC_ERROR_MESSAGE} ${CHECK_OFFLINE_HINT_MESSAGE}`;
+    setStatus(offlineMessage);
+    publishTaskpaneNotifications([offlineMessage], {
+      source: "taskpane",
+      level: "warn",
+    });
     checkRunInFlight = false;
     setBusy(false);
     return;
@@ -454,9 +459,18 @@ const runCheck = async () => {
       }
     }
     if (isOffline()) {
-      setStatus(`${CHECK_GENERIC_ERROR_MESSAGE} ${CHECK_OFFLINE_HINT_MESSAGE}`);
+      const offlineMessage = `${CHECK_GENERIC_ERROR_MESSAGE} ${CHECK_OFFLINE_HINT_MESSAGE}`;
+      setStatus(offlineMessage);
+      publishTaskpaneNotifications([offlineMessage], {
+        source: "taskpane",
+        level: "warn",
+      });
     } else {
       setStatus(CHECK_GENERIC_ERROR_MESSAGE);
+      publishTaskpaneNotifications([CHECK_GENERIC_ERROR_MESSAGE], {
+        source: "taskpane",
+        level: "error",
+      });
     }
   } finally {
     log("runCheck:finally", {
