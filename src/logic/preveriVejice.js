@@ -3530,7 +3530,14 @@ async function resolveExactWindowInsertRangeForSuggestion(
   };
 }
 
-async function getRangesForPlannedOperations(context, paragraph, snapshotText, plan, reason = "apply-planned") {
+async function getRangesForPlannedOperations(
+  context,
+  paragraph,
+  snapshotText,
+  plan,
+  reason = "apply-planned",
+  options = {}
+) {
   if (!Array.isArray(plan) || !plan.length) return [];
   if (!paragraph || typeof paragraph.getRange !== "function") {
     return plan.map(() => null);
@@ -3542,6 +3549,11 @@ async function getRangesForPlannedOperations(context, paragraph, snapshotText, p
 
   const text = typeof snapshotText === "string" ? snapshotText : paragraph.text || "";
   const liveText = typeof paragraph.text === "string" ? paragraph.text : text;
+  const lookupMemo = options?.lookupMemo instanceof Map ? options.lookupMemo : null;
+  const liveTextKey =
+    typeof options?.liveTextKey === "string" && options.liveTextKey
+      ? options.liveTextKey
+      : `planned|${reason}|${liveText}`;
   const searchOptions = {
     matchCase: true,
     matchWholeWord: false,
@@ -3554,6 +3566,10 @@ async function getRangesForPlannedOperations(context, paragraph, snapshotText, p
   const blockedDeleteIndexes = new Set();
   const requests = [];
   const searchCache = new Map();
+  const searchOptionsKey = `${searchOptions.matchCase ? 1 : 0}:${searchOptions.matchWholeWord ? 1 : 0}:${
+    searchOptions.ignoreSpace ? 1 : 0
+  }:${searchOptions.ignorePunct ? 1 : 0}`;
+  const buildSearchMemoKey = (snippet) => `search|${liveTextKey}|${searchOptionsKey}|${snippet}`;
   // Use the same token-boundary resolver for single-apply and apply-all so
   // batch inserts do not fall back to weaker snippet placement like `word ,next`.
   // Disable exact-window replace for inserts; it rewrites spans and can mangle words.
@@ -3692,7 +3708,11 @@ async function getRangesForPlannedOperations(context, paragraph, snapshotText, p
         paragraph,
         op,
         strictSuggestion,
-        `${reason}-strict-insert`
+        `${reason}-strict-insert`,
+        {
+          lookupMemo,
+          liveTextKey,
+        }
       );
       if (strictResolution?.range) {
         resolvedRanges[opIndex] = strictResolution.range;
@@ -3725,7 +3745,11 @@ async function getRangesForPlannedOperations(context, paragraph, snapshotText, p
         context,
         paragraph,
         strictSuggestion,
-        `${reason}-strict-delete`
+        `${reason}-strict-delete`,
+        {
+          lookupMemo,
+          liveTextKey,
+        }
       );
       if (strictResolution?.range) {
         resolvedRanges[opIndex] = strictResolution.range;
@@ -3788,25 +3812,37 @@ async function getRangesForPlannedOperations(context, paragraph, snapshotText, p
       variants.push({ text: trimmed, safeStart });
     }
 
-    const unique = [];
-    const seen = new Set();
-    for (const variant of variants) {
-      if (seen.has(variant.text)) continue;
-      seen.add(variant.text);
-      let matches = searchCache.get(variant.text);
-      if (!matches) {
-        matches = paragraph.getRange().search(variant.text, searchOptions);
-        matches.load("items");
-        searchCache.set(variant.text, matches);
-        requests.push({ matches, text: variant.text, safeStart, opIndex });
+      const unique = [];
+      const seen = new Set();
+      for (const variant of variants) {
+        if (seen.has(variant.text)) continue;
+        seen.add(variant.text);
+        const memoKey = lookupMemo ? buildSearchMemoKey(variant.text) : null;
+        const cachedMatches = memoKey ? lookupMemo.get(memoKey) : null;
+        let matches = searchCache.get(variant.text);
+        if (!matches && cachedMatches) {
+          matches = cachedMatches;
+          searchCache.set(variant.text, matches);
+        }
+        if (!matches) {
+          matches = paragraph.getRange().search(variant.text, searchOptions);
+          matches.load("items");
+          searchCache.set(variant.text, matches);
+          requests.push({ matches, text: variant.text, safeStart, opIndex, memoKey });
+        }
+        unique.push({ text: variant.text, safeStart, matches });
       }
-      unique.push({ text: variant.text, safeStart, matches });
-    }
     return unique;
   });
 
   if (requests.length) {
     await context.sync();
+    if (lookupMemo) {
+      for (const request of requests) {
+        if (!request?.memoKey) continue;
+        lookupMemo.set(request.memoKey, request.matches);
+      }
+    }
   }
 
   return plan.map((op, opIndex) => {
@@ -14092,12 +14128,24 @@ async function checkDocumentTextDesktop(checkToken) {
                   Number.isFinite(deferredOp?.boundary?.sourceBoundaryStart) ||
                   Number.isFinite(deferredOp?.boundary?.sourceBoundaryEnd)
               );
+              const primaryDeferredQuoteIntent = primaryDeferredSuggestion
+                ? resolveSuggestionQuoteBoundaryIntent(primaryDeferredSuggestion, deferredOp)
+                : null;
+              const shouldAttemptStrictInsert =
+                deferredOp?.kind === "insert" &&
+                Boolean(primaryDeferredSuggestion) &&
+                (hasBoundaryCue ||
+                  suggestionTouchesQuoteBoundary(primaryDeferredSuggestion) ||
+                  isExplicitQuoteBoundaryIntent(primaryDeferredQuoteIntent));
+              const shouldAttemptStrictDelete =
+                deferredOp?.kind === "delete" &&
+                Boolean(primaryDeferredSuggestion);
               let deferredRange = null;
               let deferredRangeSource = "none";
               let deferredInsertLocation =
                 deferredOp?.insertLocation ??
                 (deferredOp.kind === "insert" ? Word.InsertLocation.before : Word.InsertLocation.replace);
-              if (deferredOp?.kind === "insert" && primaryDeferredSuggestion) {
+              if (shouldAttemptStrictInsert) {
                 const strictInsertResolution = await withDesktopSyncScope("apply_strict_insert", () =>
                   resolveStrictInsertRangeForSuggestion(
                     context,
@@ -14132,7 +14180,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   }
                   continue;
                 }
-              } else if (deferredOp?.kind === "delete" && primaryDeferredSuggestion) {
+              } else if (shouldAttemptStrictDelete) {
                 const strictDeleteResolution = await withDesktopSyncScope("apply_strict_delete", () =>
                   resolveStrictDeleteRangeForSuggestion(
                     context,
@@ -14162,7 +14210,11 @@ async function checkDocumentTextDesktop(checkToken) {
                     paragraph,
                     deferredVirtualText,
                     [deferredOp],
-                    "desktop-batch-step"
+                    "desktop-batch-step",
+                    {
+                      lookupMemo: paragraphLookupMemo,
+                      liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                    }
                   )
                 );
                 deferredRange = Array.isArray(deferredRangeResult) ? deferredRangeResult[0] : null;
