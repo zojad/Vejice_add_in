@@ -18,8 +18,8 @@ Prerequisites:
 1. Clone and install:
 
 ```bash
-git clone https://github.com/zojad/vejice_1.git
-cd vejice_1
+git clone https://github.com/zojad/Vejice_add_in.git
+cd Vejice_add_in
 npm install
 ```
 
@@ -76,9 +76,9 @@ npm start
 
 2. Word opens with the add-in sideloaded.
 3. Open any document with Slovenian text.
-4. Go to `Home -> CJVT Vejice` and open the task pane.
+4. Go to `Home tab -> CJVT Vejice` and open the task pane.
 5. Click `Preveri vejice`.
-s
+
 ## Word Online Test Flow (Manual Sideload)
 
 Before testing, import/trust the generated dev certificate in the browser/environment you use for Word Online.
