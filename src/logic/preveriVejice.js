@@ -8649,6 +8649,22 @@ function shouldInsertSpaceAfterComma(nextChar) {
   return true;
 }
 
+function shouldRunForcedDesktopCleanupForText(text = "") {
+  if (typeof text !== "string" || !text.includes(",")) return false;
+  if (/\s+,/u.test(text)) return true;
+  if (/,\s*,/u.test(text)) return true;
+  if (/["'`\u2018\u2019\u201A\u201C\u201D\u201E\u00AB\u00BB\u2039\u203A][\s\u200B-\u200D\uFEFF]+,/u.test(text)) {
+    return true;
+  }
+  for (let idx = 0; idx < text.length - 1; idx++) {
+    if (text[idx] !== ",") continue;
+    if (shouldInsertSpaceAfterComma(text[idx + 1] ?? "")) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function areAllSuggestionsLemmaAuthoritative(suggestions = []) {
   return (
     Array.isArray(suggestions) &&
@@ -14204,6 +14220,7 @@ async function checkDocumentTextDesktop(checkToken) {
               Array.isArray(op?.suggestions) ? op.suggestions.filter(Boolean) : [];
             let deferredVirtualText = currentSnapshotText;
             const deferredLiveSnapshotKey = `desktop-deferred|p:${job.paragraphIndex}|v:${currentSnapshotText}`;
+            let deferredCleanupTextCandidate = null;
             const deferredStagedMutations = [];
             const coalescedDeferred = coalesceCompatibleDeferredOperations(deferredPlan);
             if (coalescedDeferred.merged > 0 && DESKTOP_VERBOSE_LOGS) {
@@ -14215,6 +14232,83 @@ async function checkDocumentTextDesktop(checkToken) {
               });
             }
             const deferredApplyPlan = coalescedDeferred.plan;
+            const prefetchDeferredStrictTokenPairLookups = async (ops = []) => {
+              if (!(paragraphLookupMemo instanceof Map) || !Array.isArray(ops) || !ops.length) {
+                return;
+              }
+              const snippetSearchOptions = {
+                matchCase: false,
+                matchWholeWord: true,
+                ignoreSpace: false,
+                ignorePunct: false,
+              };
+              const snippetOptionsKey = `${snippetSearchOptions.matchCase ? 1 : 0}:${
+                snippetSearchOptions.matchWholeWord ? 1 : 0
+              }:${snippetSearchOptions.ignoreSpace ? 1 : 0}:${snippetSearchOptions.ignorePunct ? 1 : 0}`;
+              const pending = [];
+              const queuedMemoKeys = new Set();
+              const cleanTokenFromAnchorLike = (anchorLike) => {
+                if (anchorLike && typeof anchorLike === "object") {
+                  return getCleanWordTokenFromAnchor(anchorLike);
+                }
+                if (typeof anchorLike === "string") {
+                  return anchorLike.trim().replace(/^[^\p{L}\d]+|[^\p{L}\d]+$/gu, "");
+                }
+                return "";
+              };
+              const queueSearch = (memoKey, text, searchOptions) => {
+                if (!memoKey || !text) return;
+                if (paragraphLookupMemo.has(memoKey) || queuedMemoKeys.has(memoKey)) return;
+                const matches = paragraph.getRange().search(text, searchOptions);
+                matches.load("items");
+                pending.push({ memoKey, matches });
+                queuedMemoKeys.add(memoKey);
+              };
+              const queueSnippetSearch = (tokenText) => {
+                const safeToken = typeof tokenText === "string" ? tokenText.trim() : "";
+                if (!safeToken) return;
+                const memoKey = `search|${deferredLiveSnapshotKey}|${snippetOptionsKey}|${safeToken}`;
+                queueSearch(memoKey, safeToken, snippetSearchOptions);
+              };
+              for (const op of ops) {
+                if (op?.kind !== "insert") continue;
+                const suggestions = getDeferredOpSuggestions(op);
+                for (const suggestion of suggestions) {
+                  const meta = suggestion?.meta?.anchor ?? {};
+                  const boundary = op?.boundary ?? {};
+                  const boundaryMeta = meta?.boundaryMeta ?? {};
+                  const beforeAnchor =
+                    boundary?.beforeToken ??
+                    boundaryMeta?.beforeToken ??
+                    meta?.sourceTokenBefore ??
+                    meta?.targetTokenBefore ??
+                    null;
+                  const afterAnchor =
+                    boundary?.afterToken ??
+                    boundaryMeta?.afterToken ??
+                    meta?.sourceTokenAfter ??
+                    meta?.targetTokenAfter ??
+                    null;
+                  queueSnippetSearch(cleanTokenFromAnchorLike(beforeAnchor));
+                  queueSnippetSearch(cleanTokenFromAnchorLike(afterAnchor));
+                }
+              }
+              if (!pending.length) return;
+              await withDesktopSyncScope("apply_strict_prefetch", async () => {
+                await context.sync();
+              });
+              for (const entry of pending) {
+                if (!entry?.memoKey) continue;
+                paragraphLookupMemo.set(entry.memoKey, entry.matches);
+              }
+              if (DESKTOP_VERBOSE_LOGS) {
+                logDesktopVerbose("Desktop strict prefetch complete", {
+                  paragraphIndex: job.paragraphIndex,
+                  searches: pending.length,
+                });
+              }
+            };
+            await prefetchDeferredStrictTokenPairLookups(deferredApplyPlan);
             for (let deferredIndex = 0; deferredIndex < deferredApplyPlan.length; deferredIndex++) {
               const deferredOp = deferredApplyPlan[deferredIndex];
               applyOpsAttempted++;
@@ -14638,6 +14732,7 @@ async function checkDocumentTextDesktop(checkToken) {
                   countAppliedSuggestions(mutation.op);
                   applyOpsQueued++;
                 }
+                deferredCleanupTextCandidate = deferredVirtualText;
                 if (DESKTOP_VERBOSE_LOGS) {
                   logDesktopVerbose("Desktop deferred commit:applied", {
                     paragraphIndex: job.paragraphIndex,
@@ -14720,6 +14815,14 @@ async function checkDocumentTextDesktop(checkToken) {
 
           if (appliedInParagraph) {
             try {
+              const shouldRunForcedCleanup = shouldRunForcedDesktopCleanupForText(deferredCleanupTextCandidate || "");
+              if (!shouldRunForcedCleanup) {
+                if (DESKTOP_VERBOSE_LOGS) {
+                  logDesktopVerbose("Desktop cleanup skipped (no pattern hit)", {
+                    paragraphIndex: job.paragraphIndex,
+                  });
+                }
+              } else {
               const cleanupStartedAt = tnow();
               await withDesktopSyncScope("apply_cleanup", () =>
                 cleanupCommaSpacingForParagraphs(
@@ -14737,6 +14840,7 @@ async function checkDocumentTextDesktop(checkToken) {
                 paragraphIndex: job.paragraphIndex,
                 cleanupMs: roundMs(cleanupElapsedMs),
               });
+              }
             } catch (cleanupErr) {
               warn("Desktop post-apply comma spacing cleanup failed", {
                 paragraphIndex: job.paragraphIndex,
