@@ -6,18 +6,10 @@ const command = process.platform === "win32" ? "npx.cmd" : "npx";
 const args = ["webpack", "serve", "--mode", "development"];
 
 let sawAddrInUse = false;
-const childEnv = {
-  ...process.env,
-  VEJICE_DESKTOP_VERBOSE_LOGS:
-    typeof process.env.VEJICE_DESKTOP_VERBOSE_LOGS === "string" &&
-    process.env.VEJICE_DESKTOP_VERBOSE_LOGS.trim().length
-      ? process.env.VEJICE_DESKTOP_VERBOSE_LOGS
-      : "true",
-};
 
 const child = spawn(command, args, {
   stdio: ["inherit", "pipe", "pipe"],
-  env: childEnv,
+  env: process.env,
 });
 
 function handleChunk(chunk, target) {

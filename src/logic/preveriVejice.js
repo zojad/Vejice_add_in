@@ -684,7 +684,6 @@ function isDesktopVerboseLoggingEnabled() {
       parseBooleanFlag(process.env?.VEJICE_VERBOSE_LOGS);
     if (typeof envOverride === "boolean") return envOverride;
   }
-  if (isLocalhostRuntime()) return true;
   if (QUIET_LOGS) return false;
   return false;
 }
