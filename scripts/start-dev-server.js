@@ -6,10 +6,18 @@ const command = process.platform === "win32" ? "npx.cmd" : "npx";
 const args = ["webpack", "serve", "--mode", "development"];
 
 let sawAddrInUse = false;
+const childEnv = {
+  ...process.env,
+  VEJICE_DESKTOP_VERBOSE_LOGS:
+    typeof process.env.VEJICE_DESKTOP_VERBOSE_LOGS === "string" &&
+    process.env.VEJICE_DESKTOP_VERBOSE_LOGS.trim().length
+      ? process.env.VEJICE_DESKTOP_VERBOSE_LOGS
+      : "true",
+};
 
 const child = spawn(command, args, {
   stdio: ["inherit", "pipe", "pipe"],
-  env: process.env,
+  env: childEnv,
 });
 
 function handleChunk(chunk, target) {
@@ -30,7 +38,12 @@ child.on("error", (err) => {
 
 child.on("close", (code) => {
   if (sawAddrInUse) {
-    console.log("[dev-server] Port 4001 already in use. Reusing existing dev server.");
+    console.log(
+      "[dev-server] Port 4001 already in use. Reusing existing dev server (existing env flags stay active)."
+    );
+    console.log(
+      "[dev-server] If desktop verbose logs are missing, stop the running dev server and start it again."
+    );
     process.exit(0);
   }
   process.exit(code || 0);

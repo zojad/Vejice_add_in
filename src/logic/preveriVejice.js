@@ -684,6 +684,7 @@ function isDesktopVerboseLoggingEnabled() {
       parseBooleanFlag(process.env?.VEJICE_VERBOSE_LOGS);
     if (typeof envOverride === "boolean") return envOverride;
   }
+  if (isLocalhostRuntime()) return true;
   if (QUIET_LOGS) return false;
   return false;
 }
@@ -15041,7 +15042,9 @@ async function checkDocumentTextDesktop(checkToken) {
       "| deferredCommitByParagraph:",
       serializeDesktopDeferredCommitByParagraph(),
       "| strictDeleteByParagraph:",
-      serializeDesktopStrictDeleteByParagraph()
+      serializeDesktopStrictDeleteByParagraph(),
+      "| desktopVerboseLogsEnabled:",
+      DESKTOP_VERBOSE_LOGS
     );
     if (
       paragraphsProcessed > 0 &&
@@ -15117,6 +15120,7 @@ async function checkDocumentTextDesktop(checkToken) {
         applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
         cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
       },
+      desktopVerboseLogsEnabled: DESKTOP_VERBOSE_LOGS,
       desktopSyncCounters: {
         ...desktopSyncCounters,
       },
@@ -15202,6 +15206,7 @@ async function checkDocumentTextDesktop(checkToken) {
         applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
         cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
       },
+      desktopVerboseLogsEnabled: DESKTOP_VERBOSE_LOGS,
       desktopSyncCounters: {
         ...desktopSyncCounters,
       },

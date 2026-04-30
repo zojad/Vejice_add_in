@@ -64,6 +64,11 @@ const applyBuildDebugFlagsToWindow = () => {
   const onlineVerbose = getBuildBooleanFlag("onlineVerbose");
   const onlineDrift = getBuildBooleanFlag("onlineDrift");
   const debug = getBuildBooleanFlag("debug");
+  const desktopVerbose =
+    (typeof process !== "undefined"
+      ? parseBooleanFlag(process.env?.VEJICE_DESKTOP_VERBOSE_LOGS) ??
+        parseBooleanFlag(process.env?.VEJICE_VERBOSE_LOGS)
+      : undefined) ?? undefined;
   if (typeof quiet === "boolean" && typeof window.__VEJICE_QUIET_LOGS__ !== "boolean") {
     window.__VEJICE_QUIET_LOGS__ = quiet;
   }
@@ -84,6 +89,12 @@ const applyBuildDebugFlagsToWindow = () => {
   }
   if (typeof debug === "boolean" && typeof window.__VEJICE_DEBUG__ !== "boolean") {
     window.__VEJICE_DEBUG__ = debug;
+  }
+  if (
+    typeof desktopVerbose === "boolean" &&
+    typeof window.__VEJICE_DESKTOP_VERBOSE_LOGS !== "boolean"
+  ) {
+    window.__VEJICE_DESKTOP_VERBOSE_LOGS = desktopVerbose;
   }
 };
 applyBuildDebugFlagsToWindow();
