@@ -689,15 +689,7 @@ function isDesktopVerboseLoggingEnabled() {
 }
 
 function isDesktopDirectInsertEnabled() {
-  if (typeof window !== "undefined") {
-    const override = parseBooleanFlag(window.__VEJICE_DESKTOP_DIRECT_INSERT__);
-    if (typeof override === "boolean") return override;
-  }
-  if (typeof process !== "undefined") {
-    const envOverride = parseBooleanFlag(process.env?.VEJICE_DESKTOP_DIRECT_INSERT);
-    if (typeof envOverride === "boolean") return envOverride;
-  }
-  // Safety default: keep desktop deterministic/strict path only.
+  // Disabled until direct desktop insert placement drift is resolved.
   return false;
 }
 
@@ -2941,6 +2933,30 @@ function hasDesktopDirectInsertBoundary(suggestion) {
   return beforeEnd >= 0 || atEnd >= 0 || afterStart >= 0 || charHintStart >= 0;
 }
 
+function hasDesktopDirectInsertStrongCue(suggestion) {
+  if (hasDesktopDirectInsertBoundary(suggestion)) return true;
+  const meta = suggestion?.meta?.anchor;
+  if (!meta) return false;
+  const boundaryMeta = meta?.boundaryMeta ?? {};
+  const candidateHints = [
+    boundaryMeta?.sourceBoundaryPos,
+    boundaryMeta?.sourceBoundaryStart,
+    boundaryMeta?.sourceBoundaryEnd,
+    suggestion?.meta?.op?.originalPos,
+    meta?.charStart,
+  ];
+  return candidateHints.some((value) => Number.isFinite(value) && value >= 0);
+}
+
+function hasDesktopDirectInsertPunctuationOnlySourceAnchor(suggestion) {
+  const meta = suggestion?.meta?.anchor;
+  if (!meta) return false;
+  return [meta.sourceTokenBefore, meta.sourceTokenAt, meta.sourceTokenAfter].some((anchor) => {
+    const rawToken = typeof anchor?.tokenText === "string" ? anchor.tokenText.trim() : "";
+    return Boolean(rawToken) && !getCleanWordTokenFromAnchor(anchor);
+  });
+}
+
 function toDirectBoundaryTokenSignature(token) {
   if (!token || typeof token !== "object") return null;
   const tokenText = typeof token.tokenText === "string" ? token.tokenText.trim() : "";
@@ -2965,6 +2981,10 @@ function buildDesktopDirectInsertSignature(suggestion) {
     : null;
   const hintStart = Number.isFinite(suggestion?.charHint?.start) ? Math.floor(suggestion.charHint.start) : null;
   const hintEnd = Number.isFinite(suggestion?.charHint?.end) ? Math.floor(suggestion.charHint.end) : null;
+  const anchorCharStart = Number.isFinite(meta?.charStart) ? Math.floor(meta.charStart) : null;
+  const originalPos = Number.isFinite(suggestion?.meta?.op?.originalPos)
+    ? Math.floor(suggestion.meta.op.originalPos)
+    : null;
   return [
     toDirectBoundaryTokenSignature(meta.sourceTokenBefore),
     toDirectBoundaryTokenSignature(meta.sourceTokenAt),
@@ -2974,22 +2994,81 @@ function buildDesktopDirectInsertSignature(suggestion) {
     sourceBoundaryEnd ?? "na",
     hintStart ?? "na",
     hintEnd ?? "na",
+    anchorCharStart ?? "na",
+    originalPos ?? "na",
   ].join("|");
 }
 
 function areDesktopDirectInsertSuggestionsEquivalent(suggestions) {
   if (!Array.isArray(suggestions) || !suggestions.length) return false;
-  if (!suggestions.every(hasDesktopDirectInsertBoundary)) return false;
+  if (!suggestions.every(hasDesktopDirectInsertStrongCue)) return false;
   const signatures = suggestions.map((suggestion) => buildDesktopDirectInsertSignature(suggestion));
   if (signatures.some((signature) => !signature)) return false;
   const firstSignature = signatures[0];
   return signatures.every((signature) => signature === firstSignature);
 }
 
-function isDesktopDirectInsertOp(op) {
-  if (op?.kind !== "insert") return false;
+function hasDesktopDirectInsertNearbyDeleteCounterpart(op, plan = [], opIndex = -1, radius = 4) {
+  if (!Array.isArray(plan) || op?.kind !== "insert") return false;
+  const boundaryStart = Number.isFinite(op?.boundary?.sourceBoundaryStart) ? op.boundary.sourceBoundaryStart : op?.start;
+  const boundaryEnd = Number.isFinite(op?.boundary?.sourceBoundaryEnd) ? op.boundary.sourceBoundaryEnd : op?.end;
+  if (!Number.isFinite(boundaryStart) && !Number.isFinite(boundaryEnd)) return false;
+  const safeRadius = Number.isFinite(radius) ? Math.max(0, Math.floor(radius)) : 4;
+  const windowBaseStart = Number.isFinite(boundaryStart) ? boundaryStart : boundaryEnd;
+  const windowBaseEnd = Number.isFinite(boundaryEnd) ? boundaryEnd : boundaryStart;
+  const windowStart = Math.max(0, Math.min(windowBaseStart, windowBaseEnd) - safeRadius);
+  const windowEnd = Math.max(windowBaseStart, windowBaseEnd) + safeRadius;
+  return plan.some((candidate, candidateIndex) => {
+    if (candidateIndex === opIndex || candidate?.kind !== "delete") return false;
+    const deleteStart = Number.isFinite(candidate?.start) ? candidate.start : -1;
+    return deleteStart >= windowStart && deleteStart <= windowEnd;
+  });
+}
+
+function hasDesktopDirectInsertRelocationCounterpart(op, plan = [], opIndex = -1) {
+  if (!Array.isArray(plan) || op?.kind !== "insert") return false;
+  const suggestions = Array.isArray(op?.suggestions) ? op.suggestions.filter(Boolean) : [];
+  if (!suggestions.length) return false;
+  return plan.some((candidate, candidateIndex) => {
+    if (candidateIndex === opIndex) return false;
+    const candidateSuggestions = Array.isArray(candidate?.suggestions) ? candidate.suggestions.filter(Boolean) : [];
+    if (!candidateSuggestions.length) return false;
+    return suggestions.some((suggestion) =>
+      candidateSuggestions.some((candidateSuggestion) => isSameCommaRelocationPair(suggestion, candidateSuggestion))
+    );
+  });
+}
+
+function getDesktopDirectInsertEligibility(op, plan = null, opIndex = -1) {
+  if (op?.kind !== "insert") return { eligible: false, reason: "not_insert" };
   const suggestions = Array.isArray(op?.suggestions) ? op.suggestions : [];
-  return areDesktopDirectInsertSuggestionsEquivalent(suggestions);
+  if (!suggestions.length) return { eligible: false, reason: "no_suggestions" };
+  if (!suggestions.every(hasDesktopDirectInsertStrongCue)) {
+    return { eligible: false, reason: "weak_cue" };
+  }
+  if (suggestions.some((suggestion) => suggestionTouchesQuoteBoundary(suggestion))) {
+    return { eligible: false, reason: "quote_boundary" };
+  }
+  if (suggestions.some((suggestion) => hasDesktopDirectInsertPunctuationOnlySourceAnchor(suggestion))) {
+    return { eligible: false, reason: "punctuation_anchor" };
+  }
+  if (Array.isArray(plan)) {
+    if (hasDesktopDirectInsertRelocationCounterpart(op, plan, opIndex)) {
+      return { eligible: false, reason: "relocation_pair" };
+    }
+    if (hasDesktopDirectInsertNearbyDeleteCounterpart(op, plan, opIndex)) {
+      return { eligible: false, reason: "nearby_delete" };
+    }
+  }
+  if (suggestions.length === 1) return { eligible: true, reason: "single_safe_insert" };
+  if (areDesktopDirectInsertSuggestionsEquivalent(suggestions)) {
+    return { eligible: true, reason: "equivalent_multi_insert" };
+  }
+  return { eligible: false, reason: "multi_not_equivalent" };
+}
+
+function isDesktopDirectInsertOp(op, plan = null, opIndex = -1) {
+  return getDesktopDirectInsertEligibility(op, plan, opIndex).eligible;
 }
 
 async function applyDesktopAuthoritativeInsertOp(
@@ -3712,6 +3791,7 @@ async function getRangesForPlannedOperations(
         {
           lookupMemo,
           liveTextKey,
+          strictInsertDiagnostics: options?.strictInsertDiagnostics,
         }
       );
       if (strictResolution?.range) {
@@ -6863,6 +6943,8 @@ function resolveTokenPairMatchInText(
   const match = {
     beforeToken,
     afterToken,
+    beforeTokenPositionsCount: beforePositions.length,
+    afterTokenPositionsCount: afterPositions.length,
     ...candidates[0],
   };
   if (returnDiagnostics) {
@@ -6887,6 +6969,8 @@ async function resolveTokenPairRangesForAnchors(
   afterAnchor,
   options = {}
 ) {
+  const diagSubsteps = Object.create(null);
+  const pairMatchStartedAt = tnow();
   const pairMatch = resolveTokenPairMatchInText(
     liveText,
     sourceText,
@@ -6895,6 +6979,7 @@ async function resolveTokenPairRangesForAnchors(
     afterAnchor,
     options
   );
+  diagSubsteps.resolveTokenPairMatchMs = Math.max(0, tnow() - pairMatchStartedAt);
   if (!pairMatch) return null;
 
   const snapshotKey =
@@ -6929,7 +7014,9 @@ async function resolveTokenPairRangesForAnchors(
     (entry) => entry?.needsSync && entry?.matches
   );
   if (batchedSearches.length) {
+    const searchSyncStartedAt = tnow();
     await context.sync();
+    diagSubsteps.searchSyncMs = Math.max(0, tnow() - searchSyncStartedAt);
     if (lookupMemo) {
       for (const entry of batchedSearches) {
         if (!entry?.memoKey) continue;
@@ -6945,11 +7032,34 @@ async function resolveTokenPairRangesForAnchors(
 
   const beforeCharEnd = pairMatch.beforeStart + pairMatch.beforeToken.length;
   const afterCharEnd = pairMatch.afterStart + pairMatch.afterToken.length;
+  const beforeIndexInBounds =
+    Number.isFinite(pairMatch.beforeIndex) &&
+    pairMatch.beforeIndex >= 0 &&
+    pairMatch.beforeIndex < beforeItems.length;
+  const afterIndexInBounds =
+    Number.isFinite(pairMatch.afterIndex) &&
+    pairMatch.afterIndex >= 0 &&
+    pairMatch.afterIndex < afterItems.length;
+  const beforeCountsAlign =
+    Number.isFinite(pairMatch.beforeTokenPositionsCount) &&
+    pairMatch.beforeTokenPositionsCount === beforeItems.length;
+  const afterCountsAlign =
+    Number.isFinite(pairMatch.afterTokenPositionsCount) &&
+    pairMatch.afterTokenPositionsCount === afterItems.length;
   let beforeRange =
-    beforeItems.length === 1 ? beforeItems[0] : null;
+    beforeItems.length === 1
+      ? beforeItems[0]
+      : beforeCountsAlign && beforeIndexInBounds
+        ? beforeItems[pairMatch.beforeIndex]
+        : null;
   let afterRange =
-    afterItems.length === 1 ? afterItems[0] : null;
+    afterItems.length === 1
+      ? afterItems[0]
+      : afterCountsAlign && afterIndexInBounds
+        ? afterItems[pairMatch.afterIndex]
+        : null;
   if (!beforeRange) {
+    const beforeCharSpanStartedAt = tnow();
     beforeRange = await getRangeForCharacterSpan(
       context,
       paragraph,
@@ -6960,8 +7070,10 @@ async function resolveTokenPairRangesForAnchors(
       pairMatch.beforeToken,
       { lookupMemo: options?.lookupMemo, snapshotKey }
     );
+    diagSubsteps.beforeCharSpanMs = Math.max(0, tnow() - beforeCharSpanStartedAt);
   }
   if (!afterRange) {
+    const afterCharSpanStartedAt = tnow();
     afterRange = await getRangeForCharacterSpan(
       context,
       paragraph,
@@ -6972,6 +7084,7 @@ async function resolveTokenPairRangesForAnchors(
       pairMatch.afterToken,
       { lookupMemo: options?.lookupMemo, snapshotKey }
     );
+    diagSubsteps.afterCharSpanMs = Math.max(0, tnow() - afterCharSpanStartedAt);
   }
   if (!beforeRange) {
     beforeRange = beforeItems[pairMatch.beforeIndex] || null;
@@ -6995,6 +7108,7 @@ async function resolveTokenPairRangesForAnchors(
       tokenText: pairMatch.afterToken,
     },
     gapText: pairMatch.gapText,
+    diagSubsteps,
   };
 }
 
@@ -7007,8 +7121,18 @@ async function resolveStrictInsertRangeForSuggestion(
   options = {}
 ) {
   const meta = suggestion?.meta?.anchor;
+  const finishStrictInsert = (branch, result) => {
+    return {
+      ...(result && typeof result === "object" ? result : {}),
+      diagBranch: typeof branch === "string" && branch ? branch : "unknown",
+    };
+  };
   if (!meta) {
-    return { range: null, insertLocation: null, reason: "insert_missing_anchor_meta" };
+    return finishStrictInsert("unresolved", {
+      range: null,
+      insertLocation: null,
+      reason: "insert_missing_anchor_meta",
+    });
   }
 
   const boundary = op?.boundary ?? null;
@@ -7104,6 +7228,7 @@ async function resolveStrictInsertRangeForSuggestion(
   const afterHintIsLive = Number.isFinite(boundary?.sourceBoundaryEnd);
   const pairSourceText =
     beforeHintIsLive || afterHintIsLive ? "" : sourceText;
+  const pairResolveStartedAt = tnow();
   const pairResolved =
     beforeAnchor && afterAnchor
       ? await resolveTokenPairRangesForAnchors(
@@ -7134,32 +7259,54 @@ async function resolveStrictInsertRangeForSuggestion(
           }
         )
       : null;
+  const tokenPairDiagSubsteps = Object.create(null);
+  tokenPairDiagSubsteps.resolveTokenPairRangesMs = Math.max(0, tnow() - pairResolveStartedAt);
+  if (pairResolved?.diagSubsteps && typeof pairResolved.diagSubsteps === "object") {
+    for (const [stepKey, stepMs] of Object.entries(pairResolved.diagSubsteps)) {
+      if (!Number.isFinite(stepMs) || stepMs < 0) continue;
+      tokenPairDiagSubsteps[`tokenPair.${stepKey}`] = stepMs;
+    }
+  }
   const beforeResolved = pairResolved?.beforeResolved ??
     (beforeAnchor
-      ? await findTokenRangeForAnchor(context, paragraph, beforeAnchor, {
-          sourceText: beforeHintIsLive ? "" : sourceText,
-          liveText,
-          liveTextKey: lookupSnapshotKey,
-          lookupMemo,
-          suggestion,
-          preferEnd: true,
-          hintIndex: boundary?.sourceBoundaryStart,
-          maxResolvedHintDrift: suggestion?.meta?.lemmaAnchorAuthoritative ? 24 : 16,
-          preferRawTokenText: preferRawQuoteAnchors,
-        })
+      ? await (async () => {
+          const beforeFallbackStartedAt = tnow();
+          const resolved = await findTokenRangeForAnchor(context, paragraph, beforeAnchor, {
+            sourceText: beforeHintIsLive ? "" : sourceText,
+            liveText,
+            liveTextKey: lookupSnapshotKey,
+            lookupMemo,
+            suggestion,
+            preferEnd: true,
+            hintIndex: boundary?.sourceBoundaryStart,
+            maxResolvedHintDrift: suggestion?.meta?.lemmaAnchorAuthoritative ? 24 : 16,
+            preferRawTokenText: preferRawQuoteAnchors,
+          });
+          if (!pairResolved) {
+            tokenPairDiagSubsteps.beforeAnchorFallbackMs = Math.max(0, tnow() - beforeFallbackStartedAt);
+          }
+          return resolved;
+        })()
       : null);
   const afterResolved = pairResolved?.afterResolved ??
     (afterAnchor
-      ? await findTokenRangeForAnchor(context, paragraph, afterAnchor, {
-          sourceText: afterHintIsLive ? "" : sourceText,
-          liveText,
-          liveTextKey: lookupSnapshotKey,
-          lookupMemo,
-          suggestion,
-          hintIndex: boundary?.sourceBoundaryEnd,
-          maxResolvedHintDrift: suggestion?.meta?.lemmaAnchorAuthoritative ? 24 : 16,
-          preferRawTokenText: preferRawQuoteAnchors,
-        })
+      ? await (async () => {
+          const afterFallbackStartedAt = tnow();
+          const resolved = await findTokenRangeForAnchor(context, paragraph, afterAnchor, {
+            sourceText: afterHintIsLive ? "" : sourceText,
+            liveText,
+            liveTextKey: lookupSnapshotKey,
+            lookupMemo,
+            suggestion,
+            hintIndex: boundary?.sourceBoundaryEnd,
+            maxResolvedHintDrift: suggestion?.meta?.lemmaAnchorAuthoritative ? 24 : 16,
+            preferRawTokenText: preferRawQuoteAnchors,
+          });
+          if (!pairResolved) {
+            tokenPairDiagSubsteps.afterAnchorFallbackMs = Math.max(0, tnow() - afterFallbackStartedAt);
+          }
+          return resolved;
+        })()
       : null);
 
   const beforeRange = beforeResolved?.range ?? null;
@@ -7321,11 +7468,11 @@ async function resolveStrictInsertRangeForSuggestion(
           afterStart: bestMatch.afterStart,
           gapText,
         });
-        return {
+        return finishStrictInsert("punctuation_before_word", {
           range: null,
           insertLocation: null,
           reason: "insert_gap_already_has_comma",
-        };
+        });
       }
       const punctuationRange = await getRangeForCharacterSpan(
         context,
@@ -7334,7 +7481,8 @@ async function resolveStrictInsertRangeForSuggestion(
         bestMatch.punctuationStart,
         bestMatch.punctuationEnd,
         `${reason}-punctuation-before-word`,
-        beforeAnchorRawToken
+        beforeAnchorRawToken,
+        { lookupMemo, snapshotKey: lookupSnapshotKey }
       );
       if (punctuationRange) {
         logDesktopVerbose("Desktop strict insert punctuation pair resolved", {
@@ -7345,11 +7493,11 @@ async function resolveStrictInsertRangeForSuggestion(
           punctuationStart: bestMatch.punctuationStart,
           afterStart: bestMatch.afterStart,
         });
-        return {
+        return finishStrictInsert("punctuation_before_word", {
           range: punctuationRange,
           insertLocation: Word.InsertLocation.after,
           reason: null,
-        };
+        });
       }
       logDesktopVerbose("Desktop strict insert punctuation pair range unresolved", {
         suggestionId: suggestion?.id ?? null,
@@ -7391,11 +7539,11 @@ async function resolveStrictInsertRangeForSuggestion(
           gapEnd,
           gapText,
         });
-        return {
+        return finishStrictInsert("punctuation_fallback", {
           range: null,
           insertLocation: null,
           reason: "insert_gap_already_has_comma",
-        };
+        });
       }
       logDesktopVerbose("Desktop strict insert punctuation fallback resolved", {
         suggestionId: suggestion?.id ?? null,
@@ -7405,11 +7553,11 @@ async function resolveStrictInsertRangeForSuggestion(
         beforeEnd,
         gapEnd,
       });
-      return {
+      return finishStrictInsert("punctuation_fallback", {
         range: beforeRange,
         insertLocation: Word.InsertLocation.after,
         reason: null,
-      };
+      });
     }
   }
 
@@ -7580,7 +7728,8 @@ async function resolveStrictInsertRangeForSuggestion(
       bestQuoteIndex,
       bestQuoteIndex + 1,
       `${reason}-${traceSuffix}`,
-      liveText[bestQuoteIndex]
+      liveText[bestQuoteIndex],
+      { lookupMemo, snapshotKey: lookupSnapshotKey }
     );
     if (charRange) {
       return {
@@ -7595,7 +7744,8 @@ async function resolveStrictInsertRangeForSuggestion(
       liveText,
       liveText[bestQuoteIndex] || "",
       bestQuoteIndex,
-      `${reason}-${traceSuffix}-fallback`
+      `${reason}-${traceSuffix}-fallback`,
+      { lookupMemo, snapshotKey: lookupSnapshotKey }
     );
     if (snippetRange) {
       return {
@@ -7632,7 +7782,7 @@ async function resolveStrictInsertRangeForSuggestion(
   };
   const explicitQuoteBoundaryResolution = await resolveExplicitQuoteBoundaryRange();
   if (explicitQuoteBoundaryResolution) {
-    return explicitQuoteBoundaryResolution;
+    return finishStrictInsert("quote_boundary_path", explicitQuoteBoundaryResolution);
   }
   const resolveGapIntent = (beforeEnd, afterStart, gapText) => {
     if (!Number.isFinite(beforeEnd) || !Number.isFinite(afterStart) || afterStart < beforeEnd) {
@@ -7718,7 +7868,8 @@ async function resolveStrictInsertRangeForSuggestion(
       anchorIndex,
       anchorIndex + 1,
       `${reason}-${traceSuffix}`,
-      liveText[anchorIndex] || beforeText.trim() || ","
+      liveText[anchorIndex] || beforeText.trim() || ",",
+      { lookupMemo, snapshotKey: lookupSnapshotKey }
     );
     return trimmedRange || beforeRange;
   };
@@ -7728,11 +7879,12 @@ async function resolveStrictInsertRangeForSuggestion(
     if (beforeEnd <= afterStart) {
       const gapText = pairResolved?.gapText ?? liveText.slice(beforeEnd, afterStart);
       if (hasBlockingBoundaryCommaInGap(gapText)) {
-        return {
+        return finishStrictInsert("token_pair_path", {
           range: null,
           insertLocation: null,
           reason: "insert_gap_already_has_comma",
-        };
+          diagSubsteps: tokenPairDiagSubsteps,
+        });
       }
       if (!hasBlockingBoundaryCommaInGap(gapText)) {
         const gapNoLeadingWs = gapText.replace(/^\s+/u, "");
@@ -7780,25 +7932,33 @@ async function resolveStrictInsertRangeForSuggestion(
               { blockPosOverride: explicitGapPos ?? quoteBoundaryAnchor }
             );
             if (quoteBoundaryResolution?.range) {
-              return quoteBoundaryResolution;
+              return finishStrictInsert("token_pair_path", {
+                ...quoteBoundaryResolution,
+                diagSubsteps: tokenPairDiagSubsteps,
+              });
             }
             if (quoteBoundaryResolution?.reason === "insert_live_quote_boundary_already_has_comma") {
-              return quoteBoundaryResolution;
+              return finishStrictInsert("token_pair_path", {
+                ...quoteBoundaryResolution,
+                diagSubsteps: tokenPairDiagSubsteps,
+              });
             }
           }
         }
         if (requiresAfterQuoteBoundary) {
-          return {
+          return finishStrictInsert("token_pair_path", {
             range: null,
             insertLocation: null,
             reason: "insert_explicit_after_quote_boundary_unresolved",
-          };
+            diagSubsteps: tokenPairDiagSubsteps,
+          });
         }
-        return {
+        return finishStrictInsert("token_pair_path", {
           range: await resolveBeforeRangeForInsert("insert-before-gap-anchor"),
           insertLocation: Word.InsertLocation.after,
           reason: null,
-        };
+          diagSubsteps: tokenPairDiagSubsteps,
+        });
       }
     }
   }
@@ -7809,11 +7969,11 @@ async function resolveStrictInsertRangeForSuggestion(
       Number.isFinite(afterStart) && afterStart >= beforeEnd ? afterStart : liveText.length;
     const gapText = liveText.slice(beforeEnd, gapEnd);
     if (hasBlockingBoundaryCommaInGap(gapText)) {
-      return {
+      return finishStrictInsert("before_anchor_fallback", {
         range: null,
         insertLocation: null,
         reason: "insert_gap_already_has_comma",
-      };
+      });
     }
     let closingQuoteRun = "";
     let quoteCursor = 0;
@@ -7839,25 +7999,25 @@ async function resolveStrictInsertRangeForSuggestion(
         { blockPosOverride: explicitGapPos ?? quoteBoundaryAnchor }
       );
       if (quoteBoundaryResolution?.range) {
-        return quoteBoundaryResolution;
+        return finishStrictInsert("quote_boundary_path", quoteBoundaryResolution);
       }
       if (quoteBoundaryResolution?.reason === "insert_live_quote_boundary_already_has_comma") {
-        return quoteBoundaryResolution;
+        return finishStrictInsert("quote_boundary_path", quoteBoundaryResolution);
       }
     }
     if (requiresAfterQuoteBoundary) {
-      return {
+      return finishStrictInsert("before_anchor_fallback", {
         range: null,
         insertLocation: null,
         reason: "insert_explicit_after_quote_boundary_unresolved",
-      };
+      });
     }
 
-    return {
+    return finishStrictInsert("before_anchor_fallback", {
       range: await resolveBeforeRangeForInsert("insert-before-anchor-fallback"),
       insertLocation: Word.InsertLocation.after,
       reason: null,
-    };
+    });
   }
 
   if (afterRange) {
@@ -7867,17 +8027,25 @@ async function resolveStrictInsertRangeForSuggestion(
         gapStart--;
       }
       if (gapStart < afterStart) {
-        return { range: null, insertLocation: null, reason: "insert_after_anchor_requires_before_pair" };
+        return finishStrictInsert("after_anchor", {
+          range: null,
+          insertLocation: null,
+          reason: "insert_after_anchor_requires_before_pair",
+        });
       }
     }
-    return {
+    return finishStrictInsert("after_anchor", {
       range: afterRange,
       insertLocation: Word.InsertLocation.before,
       reason: null,
-    };
+    });
   }
 
-  return { range: null, insertLocation: null, reason: "insert_anchor_lookup_failed" };
+  return finishStrictInsert("unresolved", {
+    range: null,
+    insertLocation: null,
+    reason: "insert_anchor_lookup_failed",
+  });
 }
 
 async function resolveStrictDeleteRangeForSuggestion(
@@ -8576,6 +8744,8 @@ async function normalizeCommaSpacingInParagraph(context, paragraph) {
   await context.sync();
   let text = paragraph.text || "";
   if (!text.includes(",")) return;
+  const cleanupLookupMemo = new Map();
+  const cleanupSnapshotKey = `cleanup|${text}`;
 
   if (charSpanRangeResolutionDisabled) {
     for (let pass = 0; pass < 8; pass++) {
@@ -8613,7 +8783,8 @@ async function normalizeCommaSpacingInParagraph(context, paragraph) {
         idx - 1,
         idx,
         "trim-space-before-comma",
-        " "
+        " ",
+        { lookupMemo: cleanupLookupMemo, snapshotKey: cleanupSnapshotKey }
       );
       if (toTrim) {
         toTrim.insertText("", Word.InsertLocation.replace);
@@ -8629,7 +8800,8 @@ async function normalizeCommaSpacingInParagraph(context, paragraph) {
         idx + 1,
         idx + 2,
         "space-after-comma",
-        nextChar
+        nextChar,
+        { lookupMemo: cleanupLookupMemo, snapshotKey: cleanupSnapshotKey }
       );
       if (afterRange) {
         afterRange.insertText(" ", Word.InsertLocation.before);
@@ -13238,6 +13410,8 @@ async function checkDocumentTextDesktop(checkToken) {
     unknown: 0,
   };
   const desktopApplySyncByScope = Object.create(null);
+  const desktopApplySyncTimingByScope = Object.create(null);
+  const desktopCleanupTimingByParagraph = Object.create(null);
   let activeDesktopSyncScope = null;
   const withDesktopSyncScope = async (scope, fn) => {
     const previousScope = activeDesktopSyncScope;
@@ -13252,11 +13426,31 @@ async function checkDocumentTextDesktop(checkToken) {
     const entries = Object.entries(desktopApplySyncByScope).sort((a, b) => b[1] - a[1]);
     return JSON.stringify(Object.fromEntries(entries));
   };
+  const serializeDesktopApplySyncTimingByScope = () => {
+    const entries = Object.entries(desktopApplySyncTimingByScope)
+      .sort((a, b) => (b[1]?.ms || 0) - (a[1]?.ms || 0))
+      .map(([scope, stats]) => [
+        scope,
+        {
+          count: stats?.count || 0,
+          ms: roundMs(stats?.ms || 0),
+        },
+      ]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
+  const serializeDesktopCleanupTimingByParagraph = () => {
+    const entries = Object.entries(desktopCleanupTimingByParagraph)
+      .sort((a, b) => Number(a[0]) - Number(b[0]))
+      .map(([paragraphIndex, ms]) => [paragraphIndex, roundMs(ms)]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
   const installDesktopSyncCounter = (context, phase) => {
     if (!context || typeof context.sync !== "function") return () => {};
     const originalSync = context.sync.bind(context);
     let active = true;
     const wrappedSync = async (...args) => {
+      const syncStartedAt = tnow();
+      const scopeName = phase === "apply" ? activeDesktopSyncScope : null;
       if (active) {
         desktopSyncCounters.total += 1;
         if (Object.prototype.hasOwnProperty.call(desktopSyncCounters, phase)) {
@@ -13264,12 +13458,22 @@ async function checkDocumentTextDesktop(checkToken) {
         } else {
           desktopSyncCounters.unknown += 1;
         }
-        if (phase === "apply" && activeDesktopSyncScope) {
-          desktopApplySyncByScope[activeDesktopSyncScope] =
-            (desktopApplySyncByScope[activeDesktopSyncScope] || 0) + 1;
+        if (phase === "apply" && scopeName) {
+          desktopApplySyncByScope[scopeName] = (desktopApplySyncByScope[scopeName] || 0) + 1;
         }
       }
-      return await originalSync(...args);
+      try {
+        return await originalSync(...args);
+      } finally {
+        if (active && phase === "apply" && scopeName) {
+          const elapsedMs = Math.max(0, tnow() - syncStartedAt);
+          const stats =
+            desktopApplySyncTimingByScope[scopeName] ||
+            (desktopApplySyncTimingByScope[scopeName] = { count: 0, ms: 0 });
+          stats.count += 1;
+          stats.ms += elapsedMs;
+        }
+      }
     };
     try {
       context.sync = wrappedSync;
@@ -13295,6 +13499,90 @@ async function checkDocumentTextDesktop(checkToken) {
   let applyOpsAttempted = 0;
   let applyOpsQueued = 0;
   let applyOpsSkipped = 0;
+  const desktopStrictInsertDiagnostics = {
+    totalCalls: 0,
+    totalMs: 0,
+    branches: Object.create(null),
+    substeps: Object.create(null),
+    unresolvedReasons: Object.create(null),
+  };
+  const desktopDirectPathStats = {
+    insertOpsSeen: 0,
+    eligibleOps: 0,
+    appliedOps: 0,
+    noopOps: 0,
+    failedOps: 0,
+    skippedByReason: Object.create(null),
+  };
+  const incrementDesktopDirectPathSkipReason = (reason) => {
+    const key = typeof reason === "string" && reason ? reason : "unknown";
+    desktopDirectPathStats.skippedByReason[key] = (desktopDirectPathStats.skippedByReason[key] || 0) + 1;
+  };
+  const serializeDesktopDirectPathSkipReasons = () => {
+    const entries = Object.entries(desktopDirectPathStats.skippedByReason).sort((a, b) => b[1] - a[1]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
+  const serializeDesktopStrictInsertDiagnostics = () => {
+    const branches = Object.fromEntries(
+      Object.entries(desktopStrictInsertDiagnostics.branches)
+        .sort((a, b) => (b[1]?.ms || 0) - (a[1]?.ms || 0))
+        .map(([branch, stats]) => [
+          branch,
+          {
+            count: stats?.count || 0,
+            ms: roundMs(stats?.ms || 0),
+          },
+        ])
+    );
+    const substeps = Object.fromEntries(
+      Object.entries(desktopStrictInsertDiagnostics.substeps)
+        .sort((a, b) => (b[1]?.ms || 0) - (a[1]?.ms || 0))
+        .map(([step, stats]) => [
+          step,
+          {
+            count: stats?.count || 0,
+            ms: roundMs(stats?.ms || 0),
+          },
+        ])
+    );
+    const unresolvedReasons = Object.fromEntries(
+      Object.entries(desktopStrictInsertDiagnostics.unresolvedReasons).sort((a, b) => b[1] - a[1])
+    );
+    return JSON.stringify({
+      totalCalls: desktopStrictInsertDiagnostics.totalCalls,
+      totalMs: roundMs(desktopStrictInsertDiagnostics.totalMs),
+      branches,
+      substeps,
+      unresolvedReasons,
+    });
+  };
+  const recordDesktopStrictInsertDiagnostic = (resolution, elapsedMs) => {
+    const safeElapsedMs = Math.max(0, Number.isFinite(elapsedMs) ? elapsedMs : 0);
+    desktopStrictInsertDiagnostics.totalCalls += 1;
+    desktopStrictInsertDiagnostics.totalMs += safeElapsedMs;
+    const branchKey =
+      typeof resolution?.diagBranch === "string" && resolution.diagBranch ? resolution.diagBranch : "unknown";
+    const branchStats =
+      desktopStrictInsertDiagnostics.branches[branchKey] ||
+      (desktopStrictInsertDiagnostics.branches[branchKey] = { count: 0, ms: 0 });
+    branchStats.count += 1;
+    branchStats.ms += safeElapsedMs;
+    if (resolution?.diagSubsteps && typeof resolution.diagSubsteps === "object") {
+      for (const [stepKey, stepMs] of Object.entries(resolution.diagSubsteps)) {
+        if (!Number.isFinite(stepMs) || stepMs < 0) continue;
+        const substepStats =
+          desktopStrictInsertDiagnostics.substeps[stepKey] ||
+          (desktopStrictInsertDiagnostics.substeps[stepKey] = { count: 0, ms: 0 });
+        substepStats.count += 1;
+        substepStats.ms += stepMs;
+      }
+    }
+    if (!resolution?.range) {
+      const reasonKey = typeof resolution?.reason === "string" && resolution.reason ? resolution.reason : "unresolved";
+      desktopStrictInsertDiagnostics.unresolvedReasons[reasonKey] =
+        (desktopStrictInsertDiagnostics.unresolvedReasons[reasonKey] || 0) + 1;
+    }
+  };
 
   try {
     // Phase 1: read document state + paragraph text in a single Word batch.
@@ -13700,6 +13988,7 @@ async function checkDocumentTextDesktop(checkToken) {
 
           const deferredSuggestions = [];
           const paragraphLookupMemo = new Map();
+          let paragraphMutatedBeforeDeferredPlan = false;
           for (let opIndex = 0; opIndex < plan.length; opIndex++) {
             const op = plan[opIndex];
             applyOpsAttempted++;
@@ -13711,10 +14000,23 @@ async function checkDocumentTextDesktop(checkToken) {
                   op: buildDesktopOperationLogEntry(op, snapshotText, sourceForPlan),
                 });
               }
+              const directInsertEligibility = getDesktopDirectInsertEligibility(op, plan, opIndex);
+              if (op?.kind === "insert") {
+                desktopDirectPathStats.insertOpsSeen += 1;
+                if (!DESKTOP_DIRECT_INSERT_ENABLED) {
+                  incrementDesktopDirectPathSkipReason("fast_path_disabled");
+                } else if (deterministicMappingV2) {
+                  incrementDesktopDirectPathSkipReason("deterministic_v2");
+                } else if (!directInsertEligibility.eligible) {
+                  incrementDesktopDirectPathSkipReason(directInsertEligibility.reason);
+                } else {
+                  desktopDirectPathStats.eligibleOps += 1;
+                }
+              }
               if (
                 DESKTOP_DIRECT_INSERT_ENABLED &&
                 !deterministicMappingV2 &&
-                isDesktopDirectInsertOp(op)
+                directInsertEligibility.eligible
               ) {
                 const directApplyStartedAt = tnow();
                 const directStatus = await withDesktopSyncScope("apply_direct_op", () =>
@@ -13737,14 +14039,18 @@ async function checkDocumentTextDesktop(checkToken) {
                   });
                 }
                 if (directStatus === "noop") {
+                  desktopDirectPathStats.noopOps += 1;
                   applyOpsSkipped++;
                   continue;
                 }
                 if (directStatus === "applied") {
+                  desktopDirectPathStats.appliedOps += 1;
                   countAppliedSuggestions(op);
                   applyOpsQueued++;
+                  paragraphMutatedBeforeDeferredPlan = true;
                   continue;
                 }
+                desktopDirectPathStats.failedOps += 1;
               }
               if (Array.isArray(op?.suggestions) && op.suggestions.length) {
                 deferredSuggestions.push(...op.suggestions);
@@ -13761,11 +14067,14 @@ async function checkDocumentTextDesktop(checkToken) {
           }
 
           if (deferredSuggestions.length) {
-            await withDesktopSyncScope("apply_deferred_plan_refresh", async () => {
-              paragraph.load("text");
-              await context.sync();
-            });
-            const currentSnapshotText = paragraph.text || "";
+            let currentSnapshotText = snapshotText;
+            if (paragraphMutatedBeforeDeferredPlan) {
+              await withDesktopSyncScope("apply_deferred_plan_refresh", async () => {
+                paragraph.load("text");
+                await context.sync();
+              });
+              currentSnapshotText = paragraph.text || "";
+            }
             const deferredPlanStartedAt = tnow();
             const {
               plan: deferredPlan,
@@ -13894,10 +14203,8 @@ async function checkDocumentTextDesktop(checkToken) {
             const getDeferredOpSuggestions = (op) =>
               Array.isArray(op?.suggestions) ? op.suggestions.filter(Boolean) : [];
             let deferredVirtualText = currentSnapshotText;
-            // currentSnapshotText has just been synced. Refresh live text only after a few queued
-            // operations, or immediately when we had to use weaker fallback range resolution.
-            let deferredNeedsLiveRefresh = false;
-            let deferredOpsSinceLiveRefresh = 0;
+            const deferredLiveSnapshotKey = `desktop-deferred|p:${job.paragraphIndex}|v:${currentSnapshotText}`;
+            const deferredStagedMutations = [];
             const coalescedDeferred = coalesceCompatibleDeferredOperations(deferredPlan);
             if (coalescedDeferred.merged > 0 && DESKTOP_VERBOSE_LOGS) {
               logDesktopVerbose("Desktop deferred coalesce", {
@@ -13912,26 +14219,6 @@ async function checkDocumentTextDesktop(checkToken) {
               const deferredOp = deferredApplyPlan[deferredIndex];
               applyOpsAttempted++;
               const deferredOpSuggestions = getDeferredOpSuggestions(deferredOp);
-              // Re-sync only when needed to limit Word roundtrips.
-              if (deferredNeedsLiveRefresh) {
-                try {
-                  await withDesktopSyncScope("apply_deferred_refresh", async () => {
-                    paragraph.load("text");
-                    await context.sync();
-                  });
-                  if (typeof paragraph.text === "string") {
-                    deferredVirtualText = paragraph.text;
-                  }
-                  deferredNeedsLiveRefresh = false;
-                  deferredOpsSinceLiveRefresh = 0;
-                } catch (refreshErr) {
-                  warnDesktopVerbose("Desktop deferred step text refresh failed", {
-                    paragraphIndex: job.paragraphIndex,
-                    opIndex: deferredIndex,
-                    err: refreshErr,
-                  });
-                }
-              }
               if (deferredOp?.kind === "insert" && deferredOpSuggestions.length) {
                 const alreadyApplied = deferredOpSuggestions.every((suggestion) =>
                   isSuggestionAppliedInLiveText(deferredVirtualText, sourceForPlan, suggestion, planOptions)
@@ -14141,11 +14428,11 @@ async function checkDocumentTextDesktop(checkToken) {
                 deferredOp?.kind === "delete" &&
                 Boolean(primaryDeferredSuggestion);
               let deferredRange = null;
-              let deferredRangeSource = "none";
               let deferredInsertLocation =
                 deferredOp?.insertLocation ??
                 (deferredOp.kind === "insert" ? Word.InsertLocation.before : Word.InsertLocation.replace);
               if (shouldAttemptStrictInsert) {
+                const strictInsertStartedAt = tnow();
                 const strictInsertResolution = await withDesktopSyncScope("apply_strict_insert", () =>
                   resolveStrictInsertRangeForSuggestion(
                     context,
@@ -14155,13 +14442,16 @@ async function checkDocumentTextDesktop(checkToken) {
                     "desktop-batch-step-strict-insert",
                     {
                       lookupMemo: paragraphLookupMemo,
-                      liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                      liveTextKey: deferredLiveSnapshotKey,
                     }
                   )
                 );
+                recordDesktopStrictInsertDiagnostic(
+                  strictInsertResolution,
+                  Math.max(0, tnow() - strictInsertStartedAt)
+                );
                 if (strictInsertResolution?.range) {
                   deferredRange = strictInsertResolution.range;
-                  deferredRangeSource = "strict_insert";
                   deferredInsertLocation =
                     strictInsertResolution.insertLocation ?? Word.InsertLocation.replace;
                   if (typeof strictInsertResolution.replacement === "string") {
@@ -14189,13 +14479,13 @@ async function checkDocumentTextDesktop(checkToken) {
                     "desktop-batch-step-strict-delete",
                     {
                       lookupMemo: paragraphLookupMemo,
-                      liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                      liveTextKey: deferredLiveSnapshotKey,
+                      strictInsertDiagnostics: desktopStrictInsertDiagnostics,
                     }
                   )
                 );
                 if (strictDeleteResolution?.range) {
                   deferredRange = strictDeleteResolution.range;
-                  deferredRangeSource = "strict_delete";
                   deferredInsertLocation =
                     strictDeleteResolution.insertLocation ?? Word.InsertLocation.replace;
                   if (typeof strictDeleteResolution.replacement === "string") {
@@ -14213,14 +14503,12 @@ async function checkDocumentTextDesktop(checkToken) {
                     "desktop-batch-step",
                     {
                       lookupMemo: paragraphLookupMemo,
-                      liveTextKey: `desktop-deferred|p:${job.paragraphIndex}|v:${deferredVirtualText}`,
+                      liveTextKey: deferredLiveSnapshotKey,
+                      strictInsertDiagnostics: desktopStrictInsertDiagnostics,
                     }
                   )
                 );
                 deferredRange = Array.isArray(deferredRangeResult) ? deferredRangeResult[0] : null;
-                if (deferredRange) {
-                  deferredRangeSource = "planned_fallback";
-                }
               }
               if (!deferredRange) {
                 applyRangeMisses++;
@@ -14241,45 +14529,12 @@ async function checkDocumentTextDesktop(checkToken) {
                   ? deferredOp.snippet.includes(",")
                   : false ||
                     deferredOpSuggestions.some((suggestion) => {
-                      const highlight =
+                    const highlight =
                         suggestion?.meta?.anchor?.highlightText ??
                         suggestion?.highlightText ??
                         "";
                       return typeof highlight === "string" && highlight.includes(",");
                     }));
-              if ((DESKTOP_VERBOSE_LOGS || expectedDeleteComma) && typeof deferredRange.load === "function") {
-                try {
-                  await withDesktopSyncScope("apply_range_text_check", async () => {
-                    deferredRange.load("text");
-                    await context.sync();
-                  });
-                  deferredResolvedRangeText =
-                    typeof deferredRange.text === "string" ? deferredRange.text : null;
-                } catch (rangeTextErr) {
-                  warnDesktopVerbose("Desktop deferred range text load failed", {
-                    paragraphIndex: job.paragraphIndex,
-                    opIndex: deferredIndex,
-                    err: rangeTextErr,
-                  });
-                }
-              }
-              if (
-                expectedDeleteComma &&
-                typeof deferredResolvedRangeText === "string" &&
-                !deferredResolvedRangeText.includes(",")
-              ) {
-                applyRangeMisses++;
-                applyOpsSkipped++;
-                if (DESKTOP_VERBOSE_LOGS) {
-                  logDesktopVerbose("Desktop deferred op:skipped delete range mismatch", {
-                    paragraphIndex: job.paragraphIndex,
-                    opIndex: deferredIndex,
-                    resolvedRangeText: deferredResolvedRangeText,
-                    op: buildDesktopOperationLogEntry(deferredOp, deferredVirtualText, sourceForPlan),
-                  });
-                }
-                continue;
-              }
               try {
                 const opApplyStartedAt = tnow();
                 if (DESKTOP_VERBOSE_LOGS) {
@@ -14290,9 +14545,17 @@ async function checkDocumentTextDesktop(checkToken) {
                     op: buildDesktopOperationLogEntry(deferredOp, currentSnapshotText, sourceForPlan),
                   });
                 }
-                deferredRange.insertText(deferredOp.replacement, deferredInsertLocation);
+                deferredStagedMutations.push({
+                  range: deferredRange,
+                  replacement: deferredOp.replacement,
+                  insertLocation: deferredInsertLocation,
+                  op: deferredOp,
+                  opIndex: deferredIndex,
+                  expectedDeleteComma,
+                  resolvedRangeText: deferredResolvedRangeText,
+                });
                 if (DESKTOP_VERBOSE_LOGS) {
-                  logDesktopVerbose("Desktop deferred op:queued", {
+                  logDesktopVerbose("Desktop deferred op:staged", {
                     paragraphIndex: job.paragraphIndex,
                     opIndex: deferredIndex,
                     insertLocation: deferredInsertLocation,
@@ -14300,18 +14563,8 @@ async function checkDocumentTextDesktop(checkToken) {
                     op: buildDesktopOperationLogEntry(deferredOp, currentSnapshotText, sourceForPlan),
                   });
                 }
-                countAppliedSuggestions(deferredOp);
-                applyOpsQueued++;
                 desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - opApplyStartedAt);
                 deferredVirtualText = applyOpToVirtualText(deferredVirtualText, deferredOp);
-                deferredOpsSinceLiveRefresh += 1;
-                const shouldForceDeferredRefresh = deferredRangeSource === "planned_fallback";
-                if (
-                  shouldForceDeferredRefresh ||
-                  deferredOpsSinceLiveRefresh >= desktopDeferredRefreshEveryOps
-                ) {
-                  deferredNeedsLiveRefresh = true;
-                }
               } catch (err) {
                 applyOpFailures++;
                 warn("Desktop batch op failed", {
@@ -14319,6 +14572,84 @@ async function checkDocumentTextDesktop(checkToken) {
                   opIndex: deferredIndex,
                   kind: deferredOp?.kind,
                   err,
+                });
+              }
+            }
+            if (deferredStagedMutations.length) {
+              const needsRangeTextCheck = deferredStagedMutations.filter(
+                (mutation) =>
+                  (DESKTOP_VERBOSE_LOGS || mutation.expectedDeleteComma) &&
+                  mutation?.range &&
+                  typeof mutation.range.load === "function"
+              );
+              if (needsRangeTextCheck.length) {
+                try {
+                  await withDesktopSyncScope("apply_range_text_check", async () => {
+                    for (const mutation of needsRangeTextCheck) {
+                      mutation.range.load("text");
+                    }
+                    await context.sync();
+                  });
+                  for (const mutation of needsRangeTextCheck) {
+                    mutation.resolvedRangeText =
+                      typeof mutation?.range?.text === "string" ? mutation.range.text : null;
+                  }
+                } catch (rangeTextErr) {
+                  warnDesktopVerbose("Desktop deferred range text batch load failed", {
+                    paragraphIndex: job.paragraphIndex,
+                    stagedOps: needsRangeTextCheck.length,
+                    err: rangeTextErr,
+                  });
+                }
+              }
+              const commitReadyMutations = [];
+              for (const mutation of deferredStagedMutations) {
+                if (
+                  mutation.expectedDeleteComma &&
+                  typeof mutation.resolvedRangeText === "string" &&
+                  !mutation.resolvedRangeText.includes(",")
+                ) {
+                  applyRangeMisses++;
+                  applyOpsSkipped++;
+                  if (DESKTOP_VERBOSE_LOGS) {
+                    logDesktopVerbose("Desktop deferred op:skipped delete range mismatch", {
+                      paragraphIndex: job.paragraphIndex,
+                      opIndex: mutation.opIndex,
+                      resolvedRangeText: mutation.resolvedRangeText,
+                      op: buildDesktopOperationLogEntry(mutation.op, deferredVirtualText, sourceForPlan),
+                    });
+                  }
+                  continue;
+                }
+                commitReadyMutations.push(mutation);
+              }
+              try {
+                const deferredCommitStartedAt = tnow();
+                for (const mutation of commitReadyMutations) {
+                  mutation.range.insertText(mutation.replacement, mutation.insertLocation);
+                }
+                if (commitReadyMutations.length) {
+                  await withDesktopSyncScope("apply_deferred_commit", async () => {
+                    await context.sync();
+                  });
+                }
+                desktopPhaseTiming.applyOpsMs += Math.max(0, tnow() - deferredCommitStartedAt);
+                for (const mutation of commitReadyMutations) {
+                  countAppliedSuggestions(mutation.op);
+                  applyOpsQueued++;
+                }
+                if (DESKTOP_VERBOSE_LOGS) {
+                  logDesktopVerbose("Desktop deferred commit:applied", {
+                    paragraphIndex: job.paragraphIndex,
+                    stagedOps: commitReadyMutations.length,
+                  });
+                }
+              } catch (commitErr) {
+                applyOpFailures += commitReadyMutations.length;
+                warn("Desktop deferred commit failed", {
+                  paragraphIndex: job.paragraphIndex,
+                  stagedOps: commitReadyMutations.length,
+                  err: commitErr,
                 });
               }
             }
@@ -14398,7 +14729,14 @@ async function checkDocumentTextDesktop(checkToken) {
                   { force: true }
                 )
               );
-              desktopPhaseTiming.cleanupMs += Math.max(0, tnow() - cleanupStartedAt);
+              const cleanupElapsedMs = Math.max(0, tnow() - cleanupStartedAt);
+              desktopPhaseTiming.cleanupMs += cleanupElapsedMs;
+              desktopCleanupTimingByParagraph[job.paragraphIndex] =
+                (desktopCleanupTimingByParagraph[job.paragraphIndex] || 0) + cleanupElapsedMs;
+              logDesktopVerbose("Desktop cleanup timing", {
+                paragraphIndex: job.paragraphIndex,
+                cleanupMs: roundMs(cleanupElapsedMs),
+              });
             } catch (cleanupErr) {
               warn("Desktop post-apply comma spacing cleanup failed", {
                 paragraphIndex: job.paragraphIndex,
@@ -14468,6 +14806,18 @@ async function checkDocumentTextDesktop(checkToken) {
       applyOpsQueued,
       "| applyOpsSkipped:",
       applyOpsSkipped,
+      "| directInsertStats:",
+      JSON.stringify({
+        insertOpsSeen: desktopDirectPathStats.insertOpsSeen,
+        eligibleOps: desktopDirectPathStats.eligibleOps,
+        appliedOps: desktopDirectPathStats.appliedOps,
+        noopOps: desktopDirectPathStats.noopOps,
+        failedOps: desktopDirectPathStats.failedOps,
+      }),
+      "| directInsertSkippedByReason:",
+      serializeDesktopDirectPathSkipReasons(),
+      "| strictInsertDiagnostics:",
+      serializeDesktopStrictInsertDiagnostics(),
       "| skippedSegments:",
       skippedSegmentsTotal,
       "| skippedSegmentsTruncated:",
@@ -14507,7 +14857,11 @@ async function checkDocumentTextDesktop(checkToken) {
       "| syncUnknown:",
       desktopSyncCounters.unknown,
       "| syncApplyByScope:",
-      serializeDesktopApplySyncByScope()
+      serializeDesktopApplySyncByScope(),
+      "| syncApplyTimingByScope:",
+      serializeDesktopApplySyncTimingByScope(),
+      "| cleanupByParagraphMs:",
+      serializeDesktopCleanupTimingByParagraph()
     );
     if (
       paragraphsProcessed > 0 &&
@@ -14535,6 +14889,41 @@ async function checkDocumentTextDesktop(checkToken) {
       applyOpsAttempted,
       applyOpsQueued,
       applyOpsSkipped,
+      desktopDirectPathStats: {
+        insertOpsSeen: desktopDirectPathStats.insertOpsSeen,
+        eligibleOps: desktopDirectPathStats.eligibleOps,
+        appliedOps: desktopDirectPathStats.appliedOps,
+        noopOps: desktopDirectPathStats.noopOps,
+        failedOps: desktopDirectPathStats.failedOps,
+        skippedByReason: {
+          ...desktopDirectPathStats.skippedByReason,
+        },
+      },
+      desktopStrictInsertDiagnostics: {
+        totalCalls: desktopStrictInsertDiagnostics.totalCalls,
+        totalMs: roundMs(desktopStrictInsertDiagnostics.totalMs),
+        branches: Object.fromEntries(
+          Object.entries(desktopStrictInsertDiagnostics.branches).map(([branch, stats]) => [
+            branch,
+            {
+              count: stats?.count || 0,
+              ms: roundMs(stats?.ms || 0),
+            },
+          ])
+        ),
+        substeps: Object.fromEntries(
+          Object.entries(desktopStrictInsertDiagnostics.substeps).map(([step, stats]) => [
+            step,
+            {
+              count: stats?.count || 0,
+              ms: roundMs(stats?.ms || 0),
+            },
+          ])
+        ),
+        unresolvedReasons: {
+          ...desktopStrictInsertDiagnostics.unresolvedReasons,
+        },
+      },
       cacheDisabled: paragraphCacheDisabled,
       cacheHits,
       cacheMisses,
@@ -14554,6 +14943,21 @@ async function checkDocumentTextDesktop(checkToken) {
       desktopApplySyncByScope: {
         ...desktopApplySyncByScope,
       },
+      desktopApplySyncTimingByScope: Object.fromEntries(
+        Object.entries(desktopApplySyncTimingByScope).map(([scope, stats]) => [
+          scope,
+          {
+            count: stats?.count || 0,
+            ms: roundMs(stats?.ms || 0),
+          },
+        ])
+      ),
+      desktopCleanupTimingByParagraph: Object.fromEntries(
+        Object.entries(desktopCleanupTimingByParagraph).map(([paragraphIndex, ms]) => [
+          paragraphIndex,
+          roundMs(ms),
+        ])
+      ),
       totalMs: roundMs(tnow() - checkStartedAt),
       perParagraphMs: roundMs(paragraphsProcessed > 0 ? (tnow() - checkStartedAt) / paragraphsProcessed : 0),
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
