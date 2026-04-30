@@ -13455,6 +13455,7 @@ async function checkDocumentTextDesktop(checkToken) {
   const desktopApplySyncByScope = Object.create(null);
   const desktopApplySyncTimingByScope = Object.create(null);
   const desktopCleanupTimingByParagraph = Object.create(null);
+  const desktopStrictPrefetchByParagraph = Object.create(null);
   const desktopDeferredCommitTimingByParagraph = Object.create(null);
   const desktopDeferredCommitCountByParagraph = Object.create(null);
   const desktopStrictDeleteTimingByParagraph = Object.create(null);
@@ -13489,6 +13490,26 @@ async function checkDocumentTextDesktop(checkToken) {
     const entries = Object.entries(desktopCleanupTimingByParagraph)
       .sort((a, b) => Number(a[0]) - Number(b[0]))
       .map(([paragraphIndex, ms]) => [paragraphIndex, roundMs(ms)]);
+    return JSON.stringify(Object.fromEntries(entries));
+  };
+  const serializeDesktopStrictPrefetchByParagraph = () => {
+    const entries = Object.keys(desktopStrictPrefetchByParagraph)
+      .sort((a, b) => Number(a) - Number(b))
+      .map((paragraphIndex) => {
+        const stats = desktopStrictPrefetchByParagraph[paragraphIndex] || {};
+        return [
+          paragraphIndex,
+          {
+            count: stats.count || 0,
+            considered: stats.considered || 0,
+            eligible: stats.eligible || 0,
+            queued: stats.queued || 0,
+            cacheHit: stats.cacheHit || 0,
+            synced: stats.synced || 0,
+            ms: roundMs(stats.ms || 0),
+          },
+        ];
+      });
     return JSON.stringify(Object.fromEntries(entries));
   };
   const serializeDesktopDeferredCommitByParagraph = () => {
@@ -14291,6 +14312,15 @@ async function checkDocumentTextDesktop(checkToken) {
               if (!(paragraphLookupMemo instanceof Map) || !Array.isArray(ops) || !ops.length) {
                 return;
               }
+              const prefetchStats = {
+                count: 1,
+                considered: 0,
+                eligible: 0,
+                queued: 0,
+                cacheHit: 0,
+                synced: 0,
+                ms: 0,
+              };
               const snippetSearchOptions = {
                 matchCase: false,
                 matchWholeWord: true,
@@ -14313,11 +14343,16 @@ async function checkDocumentTextDesktop(checkToken) {
               };
               const queueSearch = (memoKey, text, searchOptions) => {
                 if (!memoKey || !text) return;
-                if (paragraphLookupMemo.has(memoKey) || queuedMemoKeys.has(memoKey)) return;
+                if (queuedMemoKeys.has(memoKey)) return;
+                queuedMemoKeys.add(memoKey);
+                prefetchStats.queued += 1;
+                if (paragraphLookupMemo.has(memoKey)) {
+                  prefetchStats.cacheHit += 1;
+                  return;
+                }
                 const matches = paragraph.getRange().search(text, searchOptions);
                 matches.load("items");
                 pending.push({ memoKey, matches });
-                queuedMemoKeys.add(memoKey);
               };
               const queueSnippetSearch = (tokenText) => {
                 const safeToken = typeof tokenText === "string" ? tokenText.trim() : "";
@@ -14329,9 +14364,21 @@ async function checkDocumentTextDesktop(checkToken) {
                 if (op?.kind !== "insert") continue;
                 const suggestions = getDeferredOpSuggestions(op);
                 for (const suggestion of suggestions) {
+                  prefetchStats.considered += 1;
                   const meta = suggestion?.meta?.anchor ?? {};
                   const boundary = op?.boundary ?? {};
                   const boundaryMeta = meta?.boundaryMeta ?? {};
+                  const hasBoundaryCue = Boolean(
+                    boundary?.beforeToken ||
+                      boundary?.afterToken ||
+                      Number.isFinite(boundary?.sourceBoundaryStart) ||
+                      Number.isFinite(boundary?.sourceBoundaryEnd)
+                  );
+                  const explicitQuoteIntent = resolveSuggestionQuoteBoundaryIntent(suggestion, op);
+                  const hasExplicitQuoteIntent = isExplicitQuoteBoundaryIntent(explicitQuoteIntent);
+                  if (!hasBoundaryCue || hasExplicitQuoteIntent) {
+                    continue;
+                  }
                   const beforeAnchor =
                     boundary?.beforeToken ??
                     boundaryMeta?.beforeToken ??
@@ -14347,23 +14394,52 @@ async function checkDocumentTextDesktop(checkToken) {
                   const beforeToken = cleanTokenFromAnchorLike(beforeAnchor);
                   const afterToken = cleanTokenFromAnchorLike(afterAnchor);
                   if (beforeToken && afterToken) {
+                    prefetchStats.eligible += 1;
                     queueSnippetSearch(beforeToken);
                     queueSnippetSearch(afterToken);
                   }
                 }
               }
-              if (!pending.length) return;
-              await withDesktopSyncScope("apply_strict_prefetch", async () => {
-                await context.sync();
-              });
-              for (const entry of pending) {
-                if (!entry?.memoKey) continue;
-                paragraphLookupMemo.set(entry.memoKey, entry.matches);
+              if (pending.length) {
+                const prefetchSyncStartedAt = tnow();
+                await withDesktopSyncScope("apply_strict_prefetch", async () => {
+                  await context.sync();
+                });
+                prefetchStats.ms += Math.max(0, tnow() - prefetchSyncStartedAt);
+                prefetchStats.synced += pending.length;
+                for (const entry of pending) {
+                  if (!entry?.memoKey) continue;
+                  paragraphLookupMemo.set(entry.memoKey, entry.matches);
+                }
               }
+              const prefetchBucket =
+                desktopStrictPrefetchByParagraph[job.paragraphIndex] ||
+                (desktopStrictPrefetchByParagraph[job.paragraphIndex] = {
+                  count: 0,
+                  considered: 0,
+                  eligible: 0,
+                  queued: 0,
+                  cacheHit: 0,
+                  synced: 0,
+                  ms: 0,
+                });
+              prefetchBucket.count += prefetchStats.count;
+              prefetchBucket.considered += prefetchStats.considered;
+              prefetchBucket.eligible += prefetchStats.eligible;
+              prefetchBucket.queued += prefetchStats.queued;
+              prefetchBucket.cacheHit += prefetchStats.cacheHit;
+              prefetchBucket.synced += prefetchStats.synced;
+              prefetchBucket.ms += prefetchStats.ms;
               if (DESKTOP_VERBOSE_LOGS) {
                 logDesktopVerbose("Desktop strict prefetch complete", {
                   paragraphIndex: job.paragraphIndex,
                   searches: pending.length,
+                  considered: prefetchStats.considered,
+                  eligible: prefetchStats.eligible,
+                  queued: prefetchStats.queued,
+                  cacheHit: prefetchStats.cacheHit,
+                  synced: prefetchStats.synced,
+                  ms: roundMs(prefetchStats.ms),
                 });
               }
             };
@@ -15038,6 +15114,8 @@ async function checkDocumentTextDesktop(checkToken) {
       serializeDesktopApplySyncTimingByScope(),
       "| cleanupByParagraphMs:",
       serializeDesktopCleanupTimingByParagraph(),
+      "| strictPrefetchByParagraph:",
+      serializeDesktopStrictPrefetchByParagraph(),
       "| deferredCommitByParagraph:",
       serializeDesktopDeferredCommitByParagraph(),
       "| strictDeleteByParagraph:",
@@ -15141,6 +15219,25 @@ async function checkDocumentTextDesktop(checkToken) {
           roundMs(ms),
         ])
       ),
+      desktopStrictPrefetchByParagraph: Object.fromEntries(
+        Object.keys(desktopStrictPrefetchByParagraph)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((paragraphIndex) => {
+            const stats = desktopStrictPrefetchByParagraph[paragraphIndex] || {};
+            return [
+              paragraphIndex,
+              {
+                count: stats.count || 0,
+                considered: stats.considered || 0,
+                eligible: stats.eligible || 0,
+                queued: stats.queued || 0,
+                cacheHit: stats.cacheHit || 0,
+                synced: stats.synced || 0,
+                ms: roundMs(stats.ms || 0),
+              },
+            ];
+          })
+      ),
       desktopDeferredCommitByParagraph: Object.fromEntries(
         Object.keys(desktopDeferredCommitTimingByParagraph)
           .sort((a, b) => Number(a) - Number(b))
@@ -15212,6 +15309,25 @@ async function checkDocumentTextDesktop(checkToken) {
       desktopApplySyncByScope: {
         ...desktopApplySyncByScope,
       },
+      desktopStrictPrefetchByParagraph: Object.fromEntries(
+        Object.keys(desktopStrictPrefetchByParagraph)
+          .sort((a, b) => Number(a) - Number(b))
+          .map((paragraphIndex) => {
+            const stats = desktopStrictPrefetchByParagraph[paragraphIndex] || {};
+            return [
+              paragraphIndex,
+              {
+                count: stats.count || 0,
+                considered: stats.considered || 0,
+                eligible: stats.eligible || 0,
+                queued: stats.queued || 0,
+                cacheHit: stats.cacheHit || 0,
+                synced: stats.synced || 0,
+                ms: roundMs(stats.ms || 0),
+              },
+            ];
+          })
+      ),
       desktopDeferredCommitByParagraph: Object.fromEntries(
         Object.keys(desktopDeferredCommitTimingByParagraph)
           .sort((a, b) => Number(a) - Number(b))
