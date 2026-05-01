@@ -13666,6 +13666,10 @@ export async function checkDocumentText() {
       skipTrackedChangesGuards: false,
       forcedStartIndex: null,
     });
+    const desktopPassSummaries = [];
+    if (desktopSummary && typeof desktopSummary === "object") {
+      desktopPassSummaries.push(desktopSummary);
+    }
     let desktopPasses = 0;
     let desktopStallRecoveries = 0;
     let desktopLastEnd = Number.isFinite(desktopSummary?.paragraphEnd)
@@ -13713,8 +13717,244 @@ export async function checkDocumentText() {
         skipTrackedChangesGuards: true,
         forcedStartIndex: forcedNextStartIndex,
       });
+      if (desktopSummary && typeof desktopSummary === "object") {
+        desktopPassSummaries.push(desktopSummary);
+      }
     }
-    return desktopSummary;
+    if (desktopPassSummaries.length <= 1) {
+      return desktopSummary;
+    }
+    const sumTopLevelNumber = (key) =>
+      desktopPassSummaries.reduce(
+        (total, summary) =>
+          total + (Number.isFinite(summary?.[key]) ? Number(summary[key]) : 0),
+        0
+      );
+    const aggregateByKey = (list = [], valueSelector = null) => {
+      const out = Object.create(null);
+      for (const item of list) {
+        if (!item || typeof item !== "object") continue;
+        for (const [key, value] of Object.entries(item)) {
+          const numeric = valueSelector ? valueSelector(value, key) : value;
+          if (!Number.isFinite(numeric)) continue;
+          out[key] = (out[key] || 0) + Number(numeric);
+        }
+      }
+      return { ...out };
+    };
+    const aggregateChunkOpSelectionStats = () => {
+      const totals = createChunkOpSelectionRunTotals();
+      for (const summary of desktopPassSummaries) {
+        mergeChunkOpSelectionRunTotals(totals, summary?.chunkOpSelectionStats);
+      }
+      return totals;
+    };
+    const aggregateDesktopDirectPathStats = () => {
+      const stats = {
+        insertOpsSeen: 0,
+        eligibleOps: 0,
+        appliedOps: 0,
+        noopOps: 0,
+        failedOps: 0,
+        skippedByReason: Object.create(null),
+      };
+      for (const summary of desktopPassSummaries) {
+        const direct = summary?.desktopDirectPathStats || {};
+        stats.insertOpsSeen += Number.isFinite(direct.insertOpsSeen) ? direct.insertOpsSeen : 0;
+        stats.eligibleOps += Number.isFinite(direct.eligibleOps) ? direct.eligibleOps : 0;
+        stats.appliedOps += Number.isFinite(direct.appliedOps) ? direct.appliedOps : 0;
+        stats.noopOps += Number.isFinite(direct.noopOps) ? direct.noopOps : 0;
+        stats.failedOps += Number.isFinite(direct.failedOps) ? direct.failedOps : 0;
+        if (direct.skippedByReason && typeof direct.skippedByReason === "object") {
+          for (const [reason, count] of Object.entries(direct.skippedByReason)) {
+            if (!Number.isFinite(count)) continue;
+            stats.skippedByReason[reason] = (stats.skippedByReason[reason] || 0) + Number(count);
+          }
+        }
+      }
+      return {
+        insertOpsSeen: stats.insertOpsSeen,
+        eligibleOps: stats.eligibleOps,
+        appliedOps: stats.appliedOps,
+        noopOps: stats.noopOps,
+        failedOps: stats.failedOps,
+        skippedByReason: { ...stats.skippedByReason },
+      };
+    };
+    const aggregateStrictInsertDiagnostics = () => {
+      const diagnostics = {
+        totalCalls: 0,
+        totalMs: 0,
+        branches: Object.create(null),
+        substeps: Object.create(null),
+        unresolvedReasons: Object.create(null),
+      };
+      for (const summary of desktopPassSummaries) {
+        const source = summary?.desktopStrictInsertDiagnostics || {};
+        diagnostics.totalCalls += Number.isFinite(source.totalCalls) ? source.totalCalls : 0;
+        diagnostics.totalMs += Number.isFinite(source.totalMs) ? source.totalMs : 0;
+        const mergeCountMs = (target, input) => {
+          if (!input || typeof input !== "object") return;
+          for (const [key, value] of Object.entries(input)) {
+            if (!value || typeof value !== "object") continue;
+            const bucket =
+              target[key] ||
+              (target[key] = {
+                count: 0,
+                ms: 0,
+              });
+            bucket.count += Number.isFinite(value.count) ? value.count : 0;
+            bucket.ms += Number.isFinite(value.ms) ? value.ms : 0;
+          }
+        };
+        mergeCountMs(diagnostics.branches, source.branches);
+        mergeCountMs(diagnostics.substeps, source.substeps);
+        if (source.unresolvedReasons && typeof source.unresolvedReasons === "object") {
+          for (const [reason, count] of Object.entries(source.unresolvedReasons)) {
+            if (!Number.isFinite(count)) continue;
+            diagnostics.unresolvedReasons[reason] =
+              (diagnostics.unresolvedReasons[reason] || 0) + Number(count);
+          }
+        }
+      }
+      return {
+        totalCalls: diagnostics.totalCalls,
+        totalMs: roundMs(diagnostics.totalMs),
+        branches: Object.fromEntries(
+          Object.entries(diagnostics.branches).map(([key, value]) => [
+            key,
+            {
+              count: value.count || 0,
+              ms: roundMs(value.ms || 0),
+            },
+          ])
+        ),
+        substeps: Object.fromEntries(
+          Object.entries(diagnostics.substeps).map(([key, value]) => [
+            key,
+            {
+              count: value.count || 0,
+              ms: roundMs(value.ms || 0),
+            },
+          ])
+        ),
+        unresolvedReasons: { ...diagnostics.unresolvedReasons },
+      };
+    };
+    const aggregateApplySyncTimingByScope = () => {
+      const out = Object.create(null);
+      for (const summary of desktopPassSummaries) {
+        const source = summary?.desktopApplySyncTimingByScope;
+        if (!source || typeof source !== "object") continue;
+        for (const [scope, stats] of Object.entries(source)) {
+          if (!stats || typeof stats !== "object") continue;
+          const bucket =
+            out[scope] ||
+            (out[scope] = {
+              count: 0,
+              ms: 0,
+            });
+          bucket.count += Number.isFinite(stats.count) ? stats.count : 0;
+          bucket.ms += Number.isFinite(stats.ms) ? stats.ms : 0;
+        }
+      }
+      return Object.fromEntries(
+        Object.entries(out).map(([scope, stats]) => [
+          scope,
+          {
+            count: stats.count || 0,
+            ms: roundMs(stats.ms || 0),
+          },
+        ])
+      );
+    };
+    const firstSummary = desktopPassSummaries[0] || desktopSummary;
+    const lastSummary = desktopPassSummaries[desktopPassSummaries.length - 1] || desktopSummary;
+    const aggregatedSummary = {
+      ...lastSummary,
+      paragraphsProcessed: sumTopLevelNumber("paragraphsProcessed"),
+      inserted: sumTopLevelNumber("inserted"),
+      deleted: sumTopLevelNumber("deleted"),
+      detected: sumTopLevelNumber("detected"),
+      apiErrors: sumTopLevelNumber("apiErrors"),
+      nonCommaSkips: sumTopLevelNumber("nonCommaSkips"),
+      nonCommaSalvaged: sumTopLevelNumber("nonCommaSalvaged"),
+      deterministicPlannerSkips: sumTopLevelNumber("deterministicPlannerSkips"),
+      applyRangeMisses: sumTopLevelNumber("applyRangeMisses"),
+      applyOpFailures: sumTopLevelNumber("applyOpFailures"),
+      applyOpsAttempted: sumTopLevelNumber("applyOpsAttempted"),
+      applyOpsQueued: sumTopLevelNumber("applyOpsQueued"),
+      applyOpsSkipped: sumTopLevelNumber("applyOpsSkipped"),
+      cacheHits: sumTopLevelNumber("cacheHits"),
+      cacheMisses: sumTopLevelNumber("cacheMisses"),
+      unchangedHardSkips: sumTopLevelNumber("unchangedHardSkips"),
+      chunkOpSelectionStats: aggregateChunkOpSelectionStats(),
+      desktopDirectPathStats: aggregateDesktopDirectPathStats(),
+      desktopStrictInsertDiagnostics: aggregateStrictInsertDiagnostics(),
+      desktopPhaseTiming: aggregateByKey(
+        desktopPassSummaries.map((summary) => summary?.desktopPhaseTiming)
+      ),
+      desktopSyncCounters: aggregateByKey(
+        desktopPassSummaries.map((summary) => summary?.desktopSyncCounters)
+      ),
+      desktopApplySyncByScope: aggregateByKey(
+        desktopPassSummaries.map((summary) => summary?.desktopApplySyncByScope)
+      ),
+      desktopApplySyncTimingByScope: aggregateApplySyncTimingByScope(),
+      paragraphStart: Number.isFinite(firstSummary?.paragraphStart) ? firstSummary.paragraphStart : 0,
+      paragraphEnd: Number.isFinite(lastSummary?.paragraphEnd) ? lastSummary.paragraphEnd : 0,
+      paragraphTotal: Number.isFinite(lastSummary?.paragraphTotal)
+        ? lastSummary.paragraphTotal
+        : Number.isFinite(firstSummary?.paragraphTotal)
+          ? firstSummary.paragraphTotal
+          : 0,
+      totalMs: roundMs(sumTopLevelNumber("totalMs")),
+      perParagraphMs: roundMs(
+        sumTopLevelNumber("paragraphsProcessed") > 0
+          ? sumTopLevelNumber("totalMs") / sumTopLevelNumber("paragraphsProcessed")
+          : 0
+      ),
+      avgParagraphMs: roundMs(
+        sumTopLevelNumber("paragraphsProcessed") > 0
+          ? sumTopLevelNumber("totalMs") / sumTopLevelNumber("paragraphsProcessed")
+          : 0
+      ),
+      minParagraphMs: roundMs(
+        (() => {
+          const minMs = desktopPassSummaries.reduce((minValue, summary) => {
+            const value = Number.isFinite(summary?.minParagraphMs) ? Number(summary.minParagraphMs) : null;
+            if (value == null || value <= 0) return minValue;
+            return Math.min(minValue, value);
+          }, Number.POSITIVE_INFINITY);
+          return Number.isFinite(minMs) ? minMs : 0;
+        })()
+      ),
+      maxParagraphMs: roundMs(
+        desktopPassSummaries.reduce((maxMs, summary) => {
+          const value = Number.isFinite(summary?.maxParagraphMs) ? Number(summary.maxParagraphMs) : 0;
+          return Math.max(maxMs, value);
+        }, 0)
+      ),
+    };
+    log(
+      "DONE checkDocumentText() | aggregated desktop passes:",
+      desktopPassSummaries.length,
+      "| paragraphs:",
+      aggregatedSummary.paragraphsProcessed,
+      "| inserted:",
+      aggregatedSummary.inserted,
+      "| deleted:",
+      aggregatedSummary.deleted,
+      "| detected:",
+      aggregatedSummary.detected,
+      "| apiErrors:",
+      aggregatedSummary.apiErrors,
+      "| nonCommaSkips:",
+      aggregatedSummary.nonCommaSkips,
+      "| totalMs:",
+      aggregatedSummary.totalMs
+    );
+    return aggregatedSummary;
   } finally {
     documentCheckInProgress = false;
     finishAction(actionToken);
@@ -15206,25 +15446,85 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
                 }
                 commitReadyMutations.push(mutation);
               }
+              const buildExactMutationTargetKey = (mutation) => {
+                const op = mutation?.op;
+                if (!op || typeof op !== "object") return "";
+                const kind = op?.kind;
+                if (kind !== "insert" && kind !== "delete" && kind !== "replace") return "";
+                const start = Number.isFinite(op?.start)
+                  ? Math.floor(op.start)
+                  : Number.isFinite(op?.pos)
+                    ? Math.floor(op.pos)
+                    : -1;
+                const end = Number.isFinite(op?.end) ? Math.floor(op.end) : start;
+                const replacement =
+                  typeof mutation?.replacement === "string"
+                    ? mutation.replacement
+                    : typeof op?.replacement === "string"
+                      ? op.replacement
+                      : "";
+                const insertLocation =
+                  typeof mutation?.insertLocation === "string"
+                    ? mutation.insertLocation
+                    : typeof op?.insertLocation === "string"
+                      ? op.insertLocation
+                      : "";
+                return `${kind}|${start}|${end}|${replacement}|${insertLocation}`;
+              };
+              const seenExactMutationTargets = new Set();
+              const dedupedCommitReadyMutations = [];
+              let exactTargetDeduped = 0;
+              for (const mutation of commitReadyMutations) {
+                const targetKey = buildExactMutationTargetKey(mutation);
+                if (targetKey && seenExactMutationTargets.has(targetKey)) {
+                  applyOpsSkipped++;
+                  exactTargetDeduped++;
+                  if (DESKTOP_VERBOSE_LOGS) {
+                    logDesktopVerbose("Desktop deferred op:skipped exact-target duplicate", {
+                      paragraphIndex: job.paragraphIndex,
+                      opIndex: mutation?.opIndex,
+                      targetKey,
+                      op: buildDesktopOperationLogEntry(
+                        mutation?.op,
+                        deferredVirtualText,
+                        sourceForPlan
+                      ),
+                    });
+                  }
+                  continue;
+                }
+                if (targetKey) {
+                  seenExactMutationTargets.add(targetKey);
+                }
+                dedupedCommitReadyMutations.push(mutation);
+              }
+              if (exactTargetDeduped > 0 && DESKTOP_VERBOSE_LOGS) {
+                logDesktopVerbose("Desktop deferred commit exact-target dedup summary", {
+                  paragraphIndex: job.paragraphIndex,
+                  before: commitReadyMutations.length,
+                  after: dedupedCommitReadyMutations.length,
+                  deduped: exactTargetDeduped,
+                });
+              }
               try {
                 const deferredCommitStartedAt = tnow();
-                for (const mutation of commitReadyMutations) {
+                for (const mutation of dedupedCommitReadyMutations) {
                   mutation.range.insertText(mutation.replacement, mutation.insertLocation);
                 }
-                if (commitReadyMutations.length) {
+                if (dedupedCommitReadyMutations.length) {
                   await withDesktopSyncScope("apply_deferred_commit", async () => {
                     await context.sync();
                   });
                 }
                 const deferredCommitElapsedMs = Math.max(0, tnow() - deferredCommitStartedAt);
                 desktopPhaseTiming.applyOpsMs += deferredCommitElapsedMs;
-                if (commitReadyMutations.length) {
+                if (dedupedCommitReadyMutations.length) {
                   desktopDeferredCommitTimingByParagraph[job.paragraphIndex] =
                     (desktopDeferredCommitTimingByParagraph[job.paragraphIndex] || 0) + deferredCommitElapsedMs;
                   desktopDeferredCommitCountByParagraph[job.paragraphIndex] =
                     (desktopDeferredCommitCountByParagraph[job.paragraphIndex] || 0) + 1;
                 }
-                for (const mutation of commitReadyMutations) {
+                for (const mutation of dedupedCommitReadyMutations) {
                   countAppliedSuggestions(mutation.op);
                   applyOpsQueued++;
                 }
@@ -15232,14 +15532,14 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
                 if (DESKTOP_VERBOSE_LOGS) {
                   logDesktopVerbose("Desktop deferred commit:applied", {
                     paragraphIndex: job.paragraphIndex,
-                    stagedOps: commitReadyMutations.length,
+                    stagedOps: dedupedCommitReadyMutations.length,
                   });
                 }
               } catch (commitErr) {
-                applyOpFailures += commitReadyMutations.length;
+                applyOpFailures += dedupedCommitReadyMutations.length;
                 warn("Desktop deferred commit failed", {
                   paragraphIndex: job.paragraphIndex,
-                  stagedOps: commitReadyMutations.length,
+                  stagedOps: dedupedCommitReadyMutations.length,
                   err: commitErr,
                 });
               }

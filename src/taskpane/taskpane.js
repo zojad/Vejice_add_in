@@ -48,6 +48,26 @@ const resolveCheckRunWatchdogMs = () => {
   }
   return override ?? 420000;
 };
+const resolveCheckMaxPartialPasses = () => {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_CHECK_MAX_PARTIAL_PASSES);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override = parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_PARTIAL_PASSES);
+  }
+  return override ?? 300;
+};
+const resolveCheckMaxRepeatedProgress = () => {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_CHECK_MAX_REPEATED_PROGRESS);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override = parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_REPEATED_PROGRESS);
+  }
+  return override ?? 12;
+};
 const getBuildBooleanFlag = (flagName) => {
   try {
     switch (flagName) {
@@ -201,6 +221,8 @@ const CHECK_CLICK_DEBOUNCE_MS = 800;
 const MAX_VISIBLE_NOTIFICATIONS = 30;
 let lastNotificationSignature = "";
 const CHECK_RUN_WATCHDOG_MS = resolveCheckRunWatchdogMs();
+const CHECK_MAX_PARTIAL_PASSES = resolveCheckMaxPartialPasses();
+const CHECK_MAX_REPEATED_PROGRESS = resolveCheckMaxRepeatedProgress();
 const CHECK_GENERIC_ERROR_MESSAGE = "Napaka. Poskusite \u0161e enkrat.";
 const CHECK_OFFLINE_HINT_MESSAGE = "Preverite internetno povezavo.";
 const TASKPANE_SUBTITLE_WEB = "Preverite postavitev vejic v dokumentu.";
@@ -456,7 +478,19 @@ const runCheck = async () => {
       } else {
         repeatedPartialProgressCount = 0;
       }
-      if (repeatedPartialProgressCount >= 3 || partialPasses >= 100) {
+      const reachedRepeatedProgressGuard =
+        repeatedPartialProgressCount >= CHECK_MAX_REPEATED_PROGRESS;
+      const reachedPassCountGuard = partialPasses >= CHECK_MAX_PARTIAL_PASSES;
+      if (reachedRepeatedProgressGuard || reachedPassCountGuard) {
+        log("runCheck:partial-guard-stop", {
+          reachedRepeatedProgressGuard,
+          reachedPassCountGuard,
+          repeatedPartialProgressCount,
+          partialPasses,
+          maxRepeatedProgress: CHECK_MAX_REPEATED_PROGRESS,
+          maxPartialPasses: CHECK_MAX_PARTIAL_PASSES,
+          progressKey,
+        });
         break;
       }
       lastPartialProgressKey = progressKey;

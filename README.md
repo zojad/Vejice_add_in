@@ -126,6 +126,14 @@ npm run stop:web
 | `npm run validate:web:prod` | Validate `docs/manifest.web.prod.xml` |
 | `npm run lint:fix` | Fix code style issues |
 
+## What Affects Scan Quality
+
+- Offline/API availability and retries: Temporary API/network instability can reduce analyzed chunks and therefore total suggestion quality.
+- Host/runtime behavior: `context.sync` timing, range resolution drift, and Office host performance can affect application reliability.
+- Paragraph/chunk segmentation: Long or structurally dense paragraphs can produce weaker chunk-level results than standalone paragraph checks.
+- Complex formatting in Word: Lists/bullets, tables, unusual Unicode punctuation, and mixed styles can reduce anchor precision.
+- Ambiguous anchor resolution: If token-pair boundaries are unclear, strict insert/delete guards skip ops to avoid wrong edits.
+
 ## Troubleshooting
 
 Certificate issues:
