@@ -1,4 +1,4 @@
-﻿/* global document, Office, Word, console, window, URLSearchParams, navigator, process, __VEJICE_ENABLE_ONLINE_REVIEW_ACTIONS__, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__ */
+/* global document, Office, Word, console, window, URLSearchParams, navigator, process, __VEJICE_ENABLE_ONLINE_REVIEW_ACTIONS__, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__, __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__ */
 
 import {
   checkDocumentText,
@@ -33,6 +33,21 @@ const parseBooleanFlag = (value) => {
   if (["0", "false", "no", "off"].includes(normalized)) return false;
   return undefined;
 };
+const parsePositiveInteger = (value) => {
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
+};
+const resolveCheckRunWatchdogMs = () => {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_CHECK_RUN_WATCHDOG_MS);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override = parsePositiveInteger(process.env?.VEJICE_CHECK_RUN_WATCHDOG_MS);
+  }
+  return override ?? 420000;
+};
 const getBuildBooleanFlag = (flagName) => {
   try {
     switch (flagName) {
@@ -50,6 +65,10 @@ const getBuildBooleanFlag = (flagName) => {
           : undefined;
       case "debug":
         return typeof __VEJICE_BUILD_DEBUG__ === "boolean" ? __VEJICE_BUILD_DEBUG__ : undefined;
+      case "desktopVerbose":
+        return typeof __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__ === "boolean"
+          ? __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__
+          : undefined;
       default:
         return undefined;
     }
@@ -65,10 +84,11 @@ const applyBuildDebugFlagsToWindow = () => {
   const onlineDrift = getBuildBooleanFlag("onlineDrift");
   const debug = getBuildBooleanFlag("debug");
   const desktopVerbose =
+    getBuildBooleanFlag("desktopVerbose") ??
     (typeof process !== "undefined"
       ? parseBooleanFlag(process.env?.VEJICE_DESKTOP_VERBOSE_LOGS) ??
         parseBooleanFlag(process.env?.VEJICE_VERBOSE_LOGS)
-      : undefined) ?? undefined;
+      : undefined);
   if (typeof quiet === "boolean" && typeof window.__VEJICE_QUIET_LOGS__ !== "boolean") {
     window.__VEJICE_QUIET_LOGS__ = quiet;
   }
@@ -90,10 +110,7 @@ const applyBuildDebugFlagsToWindow = () => {
   if (typeof debug === "boolean" && typeof window.__VEJICE_DEBUG__ !== "boolean") {
     window.__VEJICE_DEBUG__ = debug;
   }
-  if (
-    typeof desktopVerbose === "boolean" &&
-    typeof window.__VEJICE_DESKTOP_VERBOSE_LOGS !== "boolean"
-  ) {
+  if (typeof desktopVerbose === "boolean") {
     window.__VEJICE_DESKTOP_VERBOSE_LOGS = desktopVerbose;
   }
 };
@@ -183,7 +200,7 @@ let lastCheckClickAt = 0;
 const CHECK_CLICK_DEBOUNCE_MS = 800;
 const MAX_VISIBLE_NOTIFICATIONS = 30;
 let lastNotificationSignature = "";
-const CHECK_RUN_WATCHDOG_MS = 120000;
+const CHECK_RUN_WATCHDOG_MS = resolveCheckRunWatchdogMs();
 const CHECK_GENERIC_ERROR_MESSAGE = "Napaka. Poskusite \u0161e enkrat.";
 const CHECK_OFFLINE_HINT_MESSAGE = "Preverite internetno povezavo.";
 const TASKPANE_SUBTITLE_WEB = "Preverite postavitev vejic v dokumentu.";
@@ -418,8 +435,32 @@ const runCheck = async () => {
     checkInProgress: isDocumentCheckInProgress(),
   });
   try {
-    const summary = await withCheckWatchdog(() => checkDocumentText());
-    log("runCheck:summary", summary);
+    let summary = null;
+    let partialPasses = 0;
+    let lastPartialProgressKey = "";
+    let repeatedPartialProgressCount = 0;
+    while (true) {
+      summary = await withCheckWatchdog(() => checkDocumentText());
+      log("runCheck:summary", summary);
+      if (summary?.status !== "partial") break;
+      partialPasses += 1;
+      const start = Number(summary?.paragraphStart ?? 0);
+      const end = Number(summary?.paragraphEnd ?? 0);
+      const total = Number(summary?.paragraphTotal ?? 0);
+      if (total > 0) {
+        setStatus(`Preverjam dokument ... (${Math.max(0, Math.min(end, total))}/${total})`);
+      }
+      const progressKey = `${summary?.mode || "na"}:${start}:${end}:${total}`;
+      if (progressKey === lastPartialProgressKey) {
+        repeatedPartialProgressCount += 1;
+      } else {
+        repeatedPartialProgressCount = 0;
+      }
+      if (repeatedPartialProgressCount >= 3 || partialPasses >= 100) {
+        break;
+      }
+      lastPartialProgressKey = progressKey;
+    }
     if (summary?.status === "deferred") {
       setStatus("Po\u010dakajte, da se trenutno opravilo zaklju\u010di.");
     } else if (online) {
@@ -769,4 +810,3 @@ Office.onReady((info) => {
     immediate: true,
   });
 });
-

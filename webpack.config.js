@@ -38,6 +38,10 @@ module.exports = async (env, options) => {
   const buildOnlineVerboseLogs = parseBuildBooleanFlag(process.env.VEJICE_ONLINE_VERBOSE_LOGS, false);
   const buildOnlineDriftLogs = parseBuildBooleanFlag(process.env.VEJICE_ONLINE_DRIFT_LOGS, false);
   const buildDebugLogs = parseBuildBooleanFlag(process.env.VEJICE_DEBUG, false);
+  const buildDesktopVerboseLogs = parseBuildBooleanFlag(
+    process.env.VEJICE_DESKTOP_VERBOSE_LOGS ?? process.env.VEJICE_VERBOSE_LOGS,
+    false
+  );
   const config = {
     devtool: "source-map",
     entry: {
@@ -106,6 +110,7 @@ module.exports = async (env, options) => {
         __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__: JSON.stringify(buildOnlineVerboseLogs),
         __VEJICE_BUILD_ONLINE_DRIFT_LOGS__: JSON.stringify(buildOnlineDriftLogs),
         __VEJICE_BUILD_DEBUG__: JSON.stringify(buildDebugLogs),
+        __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__: JSON.stringify(buildDesktopVerboseLogs),
         "process.env.VEJICE_API_URL": JSON.stringify(process.env.VEJICE_API_URL || ""),
         "process.env.VEJICE_USE_MOCK": JSON.stringify(process.env.VEJICE_USE_MOCK || ""),
         "process.env.VEJICE_USE_LEMMATIZER": JSON.stringify(process.env.VEJICE_USE_LEMMATIZER || ""),

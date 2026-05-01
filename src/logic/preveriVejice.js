@@ -1,4 +1,4 @@
-/* global Word, window, process, performance, console, Office, URL, navigator, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__ */
+/* global Word, window, process, performance, console, Office, URL, navigator, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__, __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__ */
 import { popraviPoved, popraviPovedDetailed } from "../api/apiVejice.js";
 import { isWordOnline } from "../utils/host.js";
 import { CommaSuggestionEngine } from "./engine/CommaSuggestionEngine.js";
@@ -55,6 +55,10 @@ const readBuildBooleanFlag = (symbolName) => {
           : undefined;
       case "debug":
         return typeof __VEJICE_BUILD_DEBUG__ === "boolean" ? __VEJICE_BUILD_DEBUG__ : undefined;
+      case "desktopVerbose":
+        return typeof __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__ === "boolean"
+          ? __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__
+          : undefined;
       default:
         return undefined;
     }
@@ -67,6 +71,7 @@ const BUILD_ERROR_LOGS = readBuildBooleanFlag("error");
 const BUILD_ONLINE_VERBOSE_LOGS = readBuildBooleanFlag("onlineVerbose");
 const BUILD_ONLINE_DRIFT_LOGS = readBuildBooleanFlag("onlineDrift");
 const BUILD_DEBUG = readBuildBooleanFlag("debug");
+const BUILD_DESKTOP_VERBOSE_LOGS = readBuildBooleanFlag("desktopVerbose");
 const QUIET_LOGS_OVERRIDE =
   typeof window !== "undefined" && typeof window.__VEJICE_QUIET_LOGS__ === "boolean"
     ? window.__VEJICE_QUIET_LOGS__
@@ -327,6 +332,9 @@ const ONLINE_HIGHLIGHT_FLUSH_PARAGRAPHS_DEFAULT = 5;
 const ONLINE_HIGHLIGHT_FLUSH_SUGGESTIONS_DEFAULT = 24;
 const LOCAL_ONLINE_HIGHLIGHT_FLUSH_PARAGRAPHS_DEFAULT = 1;
 const LOCAL_ONLINE_HIGHLIGHT_FLUSH_SUGGESTIONS_DEFAULT = 10;
+const CHECK_BATCH_PARAGRAPHS_DEFAULT = 180;
+const DESKTOP_CHECK_BATCH_PAGES_DEFAULT = 10;
+const DESKTOP_CHECK_CHARS_PER_PAGE_DEFAULT = 2500;
 const ONLINE_ACCEPT_MIN_CONFIDENCE_LEVEL = "medium";
 const ONLINE_UNSTABLE_BACKOFF_NON_COMMA_THRESHOLD_DEFAULT = 2;
 const ONLINE_RENDER_STATE_MAX_PARAGRAPHS = 1200;
@@ -343,6 +351,10 @@ const BOOLEAN_FALSE = new Set(["0", "false", "no", "off"]);
 let charSpanRangeResolutionDisabled = isWordOnline() && DISABLE_CHAR_SPAN_RANGES_ON_WORD_ONLINE;
 let charSpanRangeDisableLogged = false;
 let onlineAmbiguousInsertAnchorSkips = 0;
+const checkBatchCursorByMode = {
+  online: { fingerprint: null, nextIndex: 0, totalParagraphs: 0 },
+  desktop: { fingerprint: null, nextIndex: 0, totalParagraphs: 0 },
+};
 
 function parseBooleanFlag(value) {
   if (typeof value === "boolean") return value;
@@ -679,6 +691,9 @@ function isDesktopVerboseLoggingEnabled() {
       parseBooleanFlag(window.__VEJICE_DESKTOP_VERBOSE_LOGS) ??
       parseBooleanFlag(window.__VEJICE_VERBOSE_LOGS);
     if (typeof override === "boolean") return override;
+  }
+  if (typeof BUILD_DESKTOP_VERBOSE_LOGS === "boolean") {
+    return BUILD_DESKTOP_VERBOSE_LOGS;
   }
   if (typeof process !== "undefined") {
     const envOverride =
@@ -2075,6 +2090,151 @@ async function runWithConcurrency(items, concurrency, worker) {
 
 function getActiveActionType() {
   return activeActionState?.type || ACTION_TYPE_IDLE;
+}
+
+function resolveCheckBatchParagraphLimit(mode) {
+  const normalizedMode = mode === "desktop" ? "desktop" : "online";
+  let override = null;
+  if (typeof window !== "undefined") {
+    override =
+      parsePositiveInteger(
+        normalizedMode === "desktop"
+          ? window.__VEJICE_DESKTOP_CHECK_BATCH_PARAGRAPHS
+          : window.__VEJICE_ONLINE_CHECK_BATCH_PARAGRAPHS
+      ) ?? parsePositiveInteger(window.__VEJICE_CHECK_BATCH_PARAGRAPHS);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override =
+      parsePositiveInteger(
+        normalizedMode === "desktop"
+          ? process.env?.VEJICE_DESKTOP_CHECK_BATCH_PARAGRAPHS
+          : process.env?.VEJICE_ONLINE_CHECK_BATCH_PARAGRAPHS
+      ) ?? parsePositiveInteger(process.env?.VEJICE_CHECK_BATCH_PARAGRAPHS);
+  }
+  const value = override ?? CHECK_BATCH_PARAGRAPHS_DEFAULT;
+  return Math.max(1, Math.min(value, 1000));
+}
+
+function resolveDesktopCheckBatchPages() {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override =
+      parsePositiveInteger(window.__VEJICE_DESKTOP_CHECK_BATCH_PAGES) ??
+      parsePositiveInteger(window.__VEJICE_CHECK_BATCH_PAGES);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override =
+      parsePositiveInteger(process.env?.VEJICE_DESKTOP_CHECK_BATCH_PAGES) ??
+      parsePositiveInteger(process.env?.VEJICE_CHECK_BATCH_PAGES);
+  }
+  const value = override ?? DESKTOP_CHECK_BATCH_PAGES_DEFAULT;
+  return Math.max(1, Math.min(value, 50));
+}
+
+function resolveDesktopCheckCharsPerPage() {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override =
+      parsePositiveInteger(window.__VEJICE_DESKTOP_CHECK_CHARS_PER_PAGE) ??
+      parsePositiveInteger(window.__VEJICE_CHECK_CHARS_PER_PAGE);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override =
+      parsePositiveInteger(process.env?.VEJICE_DESKTOP_CHECK_CHARS_PER_PAGE) ??
+      parsePositiveInteger(process.env?.VEJICE_CHECK_CHARS_PER_PAGE);
+  }
+  const value = override ?? DESKTOP_CHECK_CHARS_PER_PAGE_DEFAULT;
+  return Math.max(1000, Math.min(value, 10000));
+}
+
+function buildParagraphFingerprint(paragraphTexts = []) {
+  if (!Array.isArray(paragraphTexts) || !paragraphTexts.length) return "0:0:0";
+  let totalChars = 0;
+  let rolling = 5381;
+  for (let idx = 0; idx < paragraphTexts.length; idx++) {
+    const text = typeof paragraphTexts[idx] === "string" ? paragraphTexts[idx] : "";
+    const len = text.length;
+    const first = len > 0 ? text.charCodeAt(0) || 0 : 0;
+    const last = len > 0 ? text.charCodeAt(len - 1) || 0 : 0;
+    totalChars += len;
+    rolling = (rolling * 33 + len + first + last + idx) % 2147483647;
+  }
+  return `${paragraphTexts.length}:${totalChars}:${rolling}`;
+}
+
+function resolveCheckBatchWindow(mode, paragraphTexts, batchParagraphLimit, options = {}) {
+  const normalizedMode = mode === "desktop" ? "desktop" : "online";
+  const totalParagraphs = Array.isArray(paragraphTexts) ? paragraphTexts.length : 0;
+  const safeBatchLimit = Math.max(1, Math.floor(batchParagraphLimit || CHECK_BATCH_PARAGRAPHS_DEFAULT));
+  const fingerprint = buildParagraphFingerprint(paragraphTexts);
+  const state = checkBatchCursorByMode[normalizedMode] || { fingerprint: null, nextIndex: 0 };
+  const forcedStartIndexRaw = Number.isFinite(options?.forcedStartIndex)
+    ? Math.max(0, Math.floor(options.forcedStartIndex))
+    : null;
+  const forcedStartIndex =
+    forcedStartIndexRaw != null ? Math.min(totalParagraphs, forcedStartIndexRaw) : null;
+  const canResume =
+    state.fingerprint === fingerprint &&
+    Number.isFinite(state.nextIndex) &&
+    state.nextIndex > 0 &&
+    state.nextIndex < totalParagraphs;
+  const startIndex =
+    forcedStartIndex != null
+      ? forcedStartIndex
+      : canResume
+        ? Math.floor(state.nextIndex)
+        : 0;
+  let endIndex = Math.min(totalParagraphs, startIndex + safeBatchLimit);
+  let pageBudget = null;
+  let charBudget = null;
+  if (normalizedMode === "desktop" && totalParagraphs > 0) {
+    const pages = resolveDesktopCheckBatchPages();
+    const charsPerPage = resolveDesktopCheckCharsPerPage();
+    charBudget = pages * charsPerPage;
+    pageBudget = pages;
+    if (Number.isFinite(charBudget) && charBudget > 0) {
+      let rollingChars = 0;
+      let rangedEnd = startIndex;
+      while (rangedEnd < totalParagraphs && rangedEnd - startIndex < safeBatchLimit) {
+        const text = typeof paragraphTexts[rangedEnd] === "string" ? paragraphTexts[rangedEnd] : "";
+        rollingChars += text.length + 1;
+        rangedEnd += 1;
+        if (rollingChars >= charBudget) break;
+      }
+      endIndex = Math.max(startIndex + 1, Math.min(totalParagraphs, rangedEnd));
+    }
+  }
+  const hasMore = endIndex < totalParagraphs;
+  return {
+    mode: normalizedMode,
+    fingerprint,
+    totalParagraphs,
+    startIndex,
+    endIndex,
+    batchParagraphLimit: safeBatchLimit,
+    pageBudget,
+    charBudget,
+    hasMore,
+    resumed: forcedStartIndex != null ? forcedStartIndex > 0 : canResume,
+    forcedStartIndex: forcedStartIndex != null ? forcedStartIndex : null,
+  };
+}
+
+function commitCheckBatchWindow(mode, batchWindow) {
+  const normalizedMode = mode === "desktop" ? "desktop" : "online";
+  if (!batchWindow || batchWindow.mode !== normalizedMode) {
+    checkBatchCursorByMode[normalizedMode] = { fingerprint: null, nextIndex: 0, totalParagraphs: 0 };
+    return;
+  }
+  if (!batchWindow.hasMore) {
+    checkBatchCursorByMode[normalizedMode] = { fingerprint: null, nextIndex: 0, totalParagraphs: 0 };
+    return;
+  }
+  checkBatchCursorByMode[normalizedMode] = {
+    fingerprint: batchWindow.fingerprint,
+    nextIndex: batchWindow.endIndex,
+    totalParagraphs: batchWindow.totalParagraphs,
+  };
 }
 
 function emitRuntimeStateUpdate(reason = null) {
@@ -13502,7 +13662,59 @@ export async function checkDocumentText() {
       getCheckAbortController(actionToken, { create: true });
       return await checkDocumentTextOnline(actionToken);
     }
-    return await checkDocumentTextDesktop(actionToken);
+    let desktopSummary = await checkDocumentTextDesktop(actionToken, {
+      skipTrackedChangesGuards: false,
+      forcedStartIndex: null,
+    });
+    let desktopPasses = 0;
+    let desktopStallRecoveries = 0;
+    let desktopLastEnd = Number.isFinite(desktopSummary?.paragraphEnd)
+      ? Math.floor(desktopSummary.paragraphEnd)
+      : 0;
+    while (desktopSummary?.status === "partial" && desktopPasses < 100) {
+      desktopPasses += 1;
+      const nextStartIndex = Number.isFinite(desktopSummary?.paragraphEnd)
+        ? Math.floor(desktopSummary.paragraphEnd)
+        : desktopLastEnd;
+      let forcedNextStartIndex = nextStartIndex;
+      if (nextStartIndex <= desktopLastEnd && desktopPasses > 1) {
+        const paragraphTotal = Number.isFinite(desktopSummary?.paragraphTotal)
+          ? Math.floor(desktopSummary.paragraphTotal)
+          : null;
+        const canForceAdvance =
+          Number.isFinite(paragraphTotal) &&
+          paragraphTotal != null &&
+          desktopLastEnd + 1 < paragraphTotal &&
+          desktopStallRecoveries < 20;
+        if (canForceAdvance) {
+          forcedNextStartIndex = desktopLastEnd + 1;
+          desktopStallRecoveries += 1;
+          warn("Desktop partial pass stalled; forcing next-start advance by one paragraph", {
+            desktopPasses,
+            desktopStallRecoveries,
+            desktopLastEnd,
+            nextStartIndex,
+            forcedNextStartIndex,
+            paragraphTotal,
+          });
+        } else {
+          warn("Desktop partial pass did not advance paragraph range; aborting continuation loop", {
+            desktopPasses,
+            desktopStallRecoveries,
+            desktopLastEnd,
+            nextStartIndex,
+            paragraphTotal,
+          });
+          break;
+        }
+      }
+      desktopLastEnd = forcedNextStartIndex;
+      desktopSummary = await checkDocumentTextDesktop(actionToken, {
+        skipTrackedChangesGuards: true,
+        forcedStartIndex: forcedNextStartIndex,
+      });
+    }
+    return desktopSummary;
   } finally {
     documentCheckInProgress = false;
     finishAction(actionToken);
@@ -13510,7 +13722,11 @@ export async function checkDocumentText() {
   }
 }
 
-async function checkDocumentTextDesktop(checkToken) {
+async function checkDocumentTextDesktop(checkToken, options = {}) {
+  const skipTrackedChangesGuards = Boolean(options?.skipTrackedChangesGuards);
+  const forcedStartIndex = Number.isFinite(options?.forcedStartIndex)
+    ? Math.max(0, Math.floor(options.forcedStartIndex))
+    : null;
   log("START checkDocumentText()");
   const checkStartedAt = tnow();
   let totalInserted = 0;
@@ -13540,6 +13756,8 @@ async function checkDocumentTextDesktop(checkToken) {
   const checkAbortController = getCheckAbortController(checkToken, { create: true });
   const checkAbortSignal = checkAbortController?.signal || null;
   const paragraphSnapshots = [];
+  const desktopBatchParagraphLimit = resolveCheckBatchParagraphLimit("desktop");
+  let desktopBatchWindow = null;
   let desktopCheckBlocked = false;
   const desktopPhaseTiming = {
     readMs: 0,
@@ -13786,13 +14004,17 @@ async function checkDocumentTextDesktop(checkToken) {
     await Word.run(async (context) => {
       const restoreSyncCounter = installDesktopSyncCounter(context, "read");
       try {
-        logDesktopVerbose("Desktop phase: tracked-change guard:start");
-        if (await documentHasTrackedChanges(context)) {
-          notifyTrackedChangesPresent();
-          desktopCheckBlocked = true;
-          return;
+        if (!skipTrackedChangesGuards) {
+          logDesktopVerbose("Desktop phase: tracked-change guard:start");
+          if (await documentHasTrackedChanges(context)) {
+            notifyTrackedChangesPresent();
+            desktopCheckBlocked = true;
+            return;
+          }
+          logDesktopVerbose("Desktop phase: tracked-change guard:done");
+        } else {
+          logDesktopVerbose("Desktop phase: tracked-change guard:skipped (continuation)");
         }
-        logDesktopVerbose("Desktop phase: tracked-change guard:done");
 
         // On desktop we require the user to enable Track Changes manually.
         const doc = context.document;
@@ -13833,6 +14055,13 @@ async function checkDocumentTextDesktop(checkToken) {
       }
     });
     desktopPhaseTiming.readMs = Math.max(0, tnow() - readPhaseStartedAt);
+    desktopBatchWindow = resolveCheckBatchWindow(
+      "desktop",
+      paragraphSnapshots.map((snapshot) => snapshot.sourceText || ""),
+      desktopBatchParagraphLimit,
+      { forcedStartIndex }
+    );
+    logDesktopVerbose("Desktop range batch window", desktopBatchWindow);
     if (desktopCheckBlocked) {
       return {
         status: "blocked",
@@ -13852,6 +14081,10 @@ async function checkDocumentTextDesktop(checkToken) {
         desktopSyncCounters: {
           ...desktopSyncCounters,
         },
+        mode: "desktop",
+        paragraphStart: desktopBatchWindow?.startIndex ?? 0,
+        paragraphEnd: desktopBatchWindow?.startIndex ?? 0,
+        paragraphTotal: desktopBatchWindow?.totalParagraphs ?? paragraphSnapshots.length,
       };
     }
 
@@ -13869,6 +14102,13 @@ async function checkDocumentTextDesktop(checkToken) {
     const analysisJobs = [];
     const applyJobs = [];
     for (const snapshot of paragraphSnapshots) {
+      if (
+        desktopBatchWindow &&
+        (snapshot.paragraphIndex < desktopBatchWindow.startIndex ||
+          snapshot.paragraphIndex >= desktopBatchWindow.endIndex)
+      ) {
+        continue;
+      }
       const normalizedSource = normalizeParagraphWhitespace(snapshot.sourceText);
       const trimmed = normalizedSource.trim();
       if (!trimmed) {
@@ -14067,13 +14307,17 @@ async function checkDocumentTextDesktop(checkToken) {
         try {
           logDesktopVerbose("Desktop phase: apply:start", { paragraphsWithSuggestions: applyJobs.length });
           // Re-check tracked changes safety before mutating document.
-          if (
-            await withDesktopSyncScope("apply_guard_tracked_changes", () =>
-              documentHasTrackedChanges(context)
-            )
-          ) {
-            notifyTrackedChangesPresent();
-            return;
+          if (!skipTrackedChangesGuards) {
+            if (
+              await withDesktopSyncScope("apply_guard_tracked_changes", () =>
+                documentHasTrackedChanges(context)
+              )
+            ) {
+              notifyTrackedChangesPresent();
+              return;
+            }
+          } else {
+            logDesktopVerbose("Desktop apply guard tracked-changes skipped (continuation)");
           }
           const doc = context.document;
           try {
@@ -15246,8 +15490,10 @@ async function checkDocumentTextDesktop(checkToken) {
     ) {
       notifyNoIssuesFound();
     }
+    commitCheckBatchWindow("desktop", desktopBatchWindow);
+    const desktopHasMore = Boolean(desktopBatchWindow?.hasMore);
     return {
-      status: "done",
+      status: desktopHasMore ? "partial" : "done",
       paragraphsProcessed,
       inserted: totalInserted,
       deleted: totalDeleted,
@@ -15378,6 +15624,10 @@ async function checkDocumentTextDesktop(checkToken) {
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
       minParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingMinMs : 0),
       maxParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingMaxMs : 0),
+      mode: "desktop",
+      paragraphStart: desktopBatchWindow?.startIndex ?? 0,
+      paragraphEnd: desktopBatchWindow?.endIndex ?? paragraphSnapshots.length,
+      paragraphTotal: desktopBatchWindow?.totalParagraphs ?? paragraphSnapshots.length,
     };
   } catch (e) {
     if (e instanceof CheckAbortError && e.reason === CHECK_ABORT_REASON_TIMEOUT) {
@@ -15470,6 +15720,10 @@ async function checkDocumentTextDesktop(checkToken) {
       avgParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingTotalMs / paragraphTimingCount : 0),
       minParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingMinMs : 0),
       maxParagraphMs: roundMs(paragraphTimingCount > 0 ? paragraphTimingMaxMs : 0),
+      mode: "desktop",
+      paragraphStart: desktopBatchWindow?.startIndex ?? 0,
+      paragraphEnd: desktopBatchWindow?.startIndex ?? 0,
+      paragraphTotal: desktopBatchWindow?.totalParagraphs ?? paragraphSnapshots.length,
       error: String(e?.message || e || "unknown-error"),
     };
   } finally {
@@ -15503,6 +15757,8 @@ async function checkDocumentTextOnline(checkToken) {
   let paragraphTimingMaxMs = 0;
   let paragraphTimingMinMs = Number.POSITIVE_INFINITY;
   const paragraphCacheDisabled = isParagraphCacheDisabled();
+  const onlineBatchParagraphLimit = resolveCheckBatchParagraphLimit("online");
+  let onlineBatchWindow = null;
   const checkAbortController = getCheckAbortController(checkToken, { create: true });
   const checkAbortSignal = checkAbortController?.signal || null;
   const previousPendingSuggestionsSnapshot = [...pendingSuggestionsOnline];
@@ -15519,6 +15775,12 @@ async function checkDocumentTextOnline(checkToken) {
         return;
       }
       const paras = await wordOnlineAdapter.getParagraphs(context);
+      onlineBatchWindow = resolveCheckBatchWindow(
+        "online",
+        paras.items.map((p) => p?.text || ""),
+        onlineBatchParagraphLimit
+      );
+      log("Online range batch window", onlineBatchWindow);
       const previousPendingMarkerStateByRenderKey = new Map();
       const previousMarkerRestoreByTag = new Map();
       for (const existingSuggestion of pendingSuggestionsOnline) {
@@ -15842,6 +16104,12 @@ async function checkDocumentTextOnline(checkToken) {
           sourceText: original,
           paragraphDocOffset,
         };
+        if (
+          onlineBatchWindow &&
+          (idx < onlineBatchWindow.startIndex || idx >= onlineBatchWindow.endIndex)
+        ) {
+          continue;
+        }
         if (!trimmed) {
           await clearPreviousRenderMarkers(idx, p);
           recordUnstableOnlineParagraphOutcome(idx, original, { nonCommaSkips: 0 });
@@ -16308,6 +16576,42 @@ async function checkDocumentTextOnline(checkToken) {
     if (paragraphsProcessed > 0 && suggestionsDetected === 0 && apiErrors === 0 && nonCommaSkips === 0) {
       notifyNoIssuesFound();
     }
+    const onlineHasMore = Boolean(onlineBatchWindow?.hasMore);
+    if (onlineHasMore) {
+      const restored = recoverPendingSuggestionsAfterInterruptedOnlineScan(
+        previousPendingSuggestionsSnapshot,
+        reconciledParagraphIndexes
+      );
+      if (restored > 0) {
+        log("Restored pending suggestions outside processed online batch", { restored });
+      }
+    }
+    commitCheckBatchWindow("online", onlineBatchWindow);
+    return {
+      status: onlineHasMore ? "partial" : "done",
+      mode: "online",
+      paragraphsProcessed,
+      detected: suggestionsDetected,
+      highlighted: suggestions,
+      apiErrors,
+      nonCommaSkips,
+      nonCommaSalvaged,
+      cacheDisabled: paragraphCacheDisabled,
+      cacheHits,
+      cacheMisses,
+      unchangedHardSkips,
+      unstableBackoffSkips,
+      rerenderSkipped,
+      scopedMarkerClears,
+      paragraphStart: onlineBatchWindow?.startIndex ?? 0,
+      paragraphEnd: onlineBatchWindow?.endIndex ?? 0,
+      paragraphTotal: onlineBatchWindow?.totalParagraphs ?? 0,
+      totalMs: roundMs(totalDurationMsRaw),
+      perParagraphMs: roundMs(perParagraphMsRaw),
+      avgParagraphMs: roundMs(avgParagraphMsRaw),
+      minParagraphMs: roundMs(minParagraphMsRaw),
+      maxParagraphMs: roundMs(maxParagraphMsRaw),
+    };
   } catch (e) {
     if (e instanceof CheckAbortError && e.reason === CHECK_ABORT_REASON_TIMEOUT) {
       warn("checkDocumentTextOnline stopped due to timeout");
@@ -16330,6 +16634,21 @@ async function checkDocumentTextOnline(checkToken) {
       });
     }
     persistPendingSuggestionsOnline();
+    return {
+      status: "error",
+      mode: "online",
+      paragraphsProcessed,
+      detected: suggestionsDetected,
+      highlighted: suggestions,
+      apiErrors,
+      nonCommaSkips,
+      nonCommaSalvaged,
+      paragraphStart: onlineBatchWindow?.startIndex ?? 0,
+      paragraphEnd: onlineBatchWindow?.startIndex ?? 0,
+      paragraphTotal: onlineBatchWindow?.totalParagraphs ?? 0,
+      totalMs: roundMs(Math.max(0, tnow() - checkStartedAt)),
+      error: String(e?.message || e || "unknown-error"),
+    };
   } finally {
     persistPendingSuggestionsOnline();
     flushScanNotifications();
