@@ -138,6 +138,7 @@ const LOCAL_API_RETRY_MAX_DELAY_MS = 900;
 const LOCAL_API_RETRY_JITTER_MS = 90;
 const DEFAULT_API_CIRCUIT_BREAKER_THRESHOLD = 4;
 const DEFAULT_API_CIRCUIT_BREAKER_COOLDOWN_MS = 20000;
+const DEFAULT_API_TIMEOUT_MS = 15000;
 
 const boolFromString = (value) => {
   if (typeof value === "boolean") return value;
@@ -1534,6 +1535,14 @@ const API_CIRCUIT_BREAKER_COOLDOWN_MS = resolveApiNumberSetting({
   max: 120000,
   round: true,
 });
+const API_REQUEST_TIMEOUT_MS = resolveApiNumberSetting({
+  windowKeys: ["__VEJICE_API_TIMEOUT_MS__"],
+  envKeys: ["VEJICE_API_TIMEOUT_MS"],
+  defaultValue: DEFAULT_API_TIMEOUT_MS,
+  min: 5000,
+  max: 300000,
+  round: true,
+});
 const ENABLE_NORMALIZED_TRANSPORT_RETRY = resolveFeatureFlag({
   windowKeys: [
     "__VEJICE_ENABLE_NORMALIZED_TRANSPORT_RETRY__",
@@ -1934,7 +1943,7 @@ async function requestPopravek(poved, options = {}) {
       "Content-Type": "application/json",
       Accept: "application/json",
     },
-    timeout: 15000, // 15s
+    timeout: API_REQUEST_TIMEOUT_MS,
     // withCredentials: false, // keep default; not needed unless API sets cookies
   };
   const requestSignal = options?.signal;

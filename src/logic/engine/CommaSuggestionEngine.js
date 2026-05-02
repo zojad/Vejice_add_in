@@ -525,9 +525,12 @@ export class CommaSuggestionEngine {
     };
     const isApiErrorSkipReason = (reason) =>
       reason === "apiError" || reason === "apiErrorCooldown" || reason === "apiErrorMaxAttempts";
-    const buildApiErrorChunkRanges = (items = []) =>
+    const shouldBlockSkippedChunkSuggestions = (reason) =>
+      typeof reason === "string" && reason.trim().length > 0;
+    const buildSkippedChunkRanges = (items = [], { predicate = null } = {}) =>
       (Array.isArray(items) ? items : [])
-        .filter((meta) => meta && !meta.detail && isApiErrorSkipReason(meta.skipReason))
+        .filter((meta) => meta && !meta.detail && typeof meta.skipReason === "string" && meta.skipReason)
+        .filter((meta) => (typeof predicate === "function" ? predicate(meta) : true))
         .map((meta) => {
           const start = Number.isFinite(meta?.chunk?.start) ? Math.floor(meta.chunk.start) : -1;
           const end = Number.isFinite(meta?.chunk?.end) ? Math.floor(meta.chunk.end) : -1;
@@ -539,11 +542,33 @@ export class CommaSuggestionEngine {
                 : null,
             start,
             end,
+            reason: meta.skipReason,
           };
         })
         .filter(Boolean);
-    const suggestionTouchesApiErrorRange = (suggestion, ranges = []) => {
-      if (!Array.isArray(ranges) || !ranges.length || !suggestion) return false;
+    const findSuppressedRangeTouch = (suggestion, ranges = []) => {
+      if (!Array.isArray(ranges) || !ranges.length || !suggestion) return null;
+      const sourceChunk = suggestion?.meta?.sourceChunk || null;
+      const sourceChunkIndex =
+        Number.isFinite(sourceChunk?.index) || typeof sourceChunk?.index === "string"
+          ? String(sourceChunk.index)
+          : "";
+      if (sourceChunkIndex) {
+        const matchedRangeByChunk = ranges.find(
+          (range) =>
+            (Number.isFinite(range?.chunkIndex) || typeof range?.chunkIndex === "string") &&
+            String(range.chunkIndex) === sourceChunkIndex
+        );
+        if (matchedRangeByChunk) return matchedRangeByChunk;
+      }
+      const sourceChunkStart = Number.isFinite(sourceChunk?.start) ? Math.floor(sourceChunk.start) : -1;
+      const sourceChunkEnd = Number.isFinite(sourceChunk?.end) ? Math.floor(sourceChunk.end) : -1;
+      if (sourceChunkStart >= 0 && sourceChunkEnd > sourceChunkStart) {
+        const matchedRangeBySpan = ranges.find(
+          (range) => sourceChunkStart < range.end && sourceChunkEnd > range.start
+        );
+        if (matchedRangeBySpan) return matchedRangeBySpan;
+      }
       const probePositions = [];
       const pushPos = (value) => {
         if (!Number.isFinite(value)) return;
@@ -566,9 +591,9 @@ export class CommaSuggestionEngine {
       pushPos(anchor?.charEnd);
       pushPos(anchor?.targetCharStart);
       pushPos(anchor?.targetCharEnd);
-      if (!probePositions.length) return false;
-      return ranges.some((range) =>
-        probePositions.some((pos) => pos >= range.start && pos < range.end)
+      if (!probePositions.length) return null;
+      return (
+        ranges.find((range) => probePositions.some((pos) => pos >= range.start && pos < range.end)) || null
       );
     };
     const buildSkippedSegments = (items = []) =>
@@ -587,6 +612,9 @@ export class CommaSuggestionEngine {
             sentenceIndex:
               Number.isFinite(chunk.index) || typeof chunk.index === "string" ? chunk.index : null,
             reason: meta.skipReason,
+            start: Number.isFinite(chunk.start) ? Math.floor(chunk.start) : null,
+            end: Number.isFinite(chunk.end) ? Math.floor(chunk.end) : null,
+            blockedForSuggestions: shouldBlockSkippedChunkSuggestions(meta.skipReason),
             snippet: makeSnippet(rawSnippet, 220),
           };
         });
@@ -1201,6 +1229,15 @@ export class CommaSuggestionEngine {
             opIndex,
           }),
         };
+        const sourceChunkMeta = {
+          index:
+            Number.isFinite(entry?.chunk?.index) || typeof entry?.chunk?.index === "string"
+              ? entry.chunk.index
+              : null,
+          start: Number.isFinite(entry?.chunk?.start) ? Math.floor(entry.chunk.start) : null,
+          end: Number.isFinite(entry?.chunk?.end) ? Math.floor(entry.chunk.end) : null,
+          skipReason: typeof entry?.metaRef?.skipReason === "string" ? entry.metaRef.skipReason : null,
+        };
         if (adjustedOp.explicitQuoteIntent) {
           quoteTraceLog("op_adjusted", {
             traceId: adjustedOp.traceId,
@@ -1229,6 +1266,8 @@ export class CommaSuggestionEngine {
           lowAnchorReliability: Boolean(entry.metaRef?.lowAnchorReliability),
         });
         if (suggestion) {
+          suggestion.meta = suggestion.meta && typeof suggestion.meta === "object" ? suggestion.meta : {};
+          suggestion.meta.sourceChunk = sourceChunkMeta;
           if (adjustedOp.explicitQuoteIntent) {
             quoteTraceLog("suggestion_built", {
               traceId: adjustedOp.traceId,
@@ -1266,25 +1305,34 @@ export class CommaSuggestionEngine {
         debugOpFlow.push(opFlow);
       }
     }
-    const apiErrorChunkRanges = buildApiErrorChunkRanges(processedMeta);
+    const skippedChunkRanges = buildSkippedChunkRanges(processedMeta, {
+      predicate: (meta) => shouldBlockSkippedChunkSuggestions(meta?.skipReason),
+    });
+    const apiErrorChunkRanges = skippedChunkRanges.filter((range) => isApiErrorSkipReason(range.reason));
     let apiErrorSuppressedSuggestions = 0;
-    const suggestionsAfterApiErrorRangeSuppression =
-      apiErrorChunkRanges.length > 0 && suggestions.length > 0
+    let skippedRangeSuppressedSuggestions = 0;
+    const suggestionsAfterSkippedRangeSuppression =
+      skippedChunkRanges.length > 0 && suggestions.length > 0
         ? suggestions.filter((suggestion) => {
-            const touchedApiErrorRange = suggestionTouchesApiErrorRange(suggestion, apiErrorChunkRanges);
-            if (touchedApiErrorRange) {
-              apiErrorSuppressedSuggestions++;
+            const touchedRange = findSuppressedRangeTouch(suggestion, skippedChunkRanges);
+            if (touchedRange) {
+              skippedRangeSuppressedSuggestions++;
+              if (isApiErrorSkipReason(touchedRange.reason)) {
+                apiErrorSuppressedSuggestions++;
+              }
               return false;
             }
             return true;
           })
         : suggestions;
-    const filteredSuggestions = suggestionsAfterApiErrorRangeSuppression;
+    const filteredSuggestions = suggestionsAfterSkippedRangeSuppression;
 
     if (debugEnabled && debugDump) {
       debugDump.final = {
         correctedParagraph,
         suggestionsCount: filteredSuggestions.length,
+        skippedChunkRanges,
+        skippedRangeSuppressedSuggestions,
         apiErrorChunkRanges,
         apiErrorSuppressedSuggestions,
         nonCommaSkips: nonCommaChunkSkips,

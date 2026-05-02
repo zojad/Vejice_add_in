@@ -1,3 +1,1210 @@
-/*! For license information please see taskpane.js.LICENSE.txt */
-"use strict";(self.webpackChunkoffice_addin_taskpane_js=self.webpackChunkoffice_addin_taskpane_js||[]).push([[926],{4594:function(e,n,t){var o=t(31046),r=t(84869),i=t(46347);function a(e,n){(null==n||n>e.length)&&(n=e.length);for(var t=0,o=Array(n);t<n;t++)o[t]=e[t];return o}function u(){var e,n,t="function"==typeof Symbol?Symbol:{},o=t.iterator||"@@iterator",r=t.toStringTag||"@@toStringTag";function i(t,o,r,i){var u=o&&o.prototype instanceof c?o:c,d=Object.create(u.prototype);return l(d,"_invoke",function(t,o,r){var i,u,l,c=0,d=r||[],s=!1,f={p:0,n:0,v:e,a:v,f:v.bind(e,4),d:function(n,t){return i=n,u=0,l=e,f.n=t,a}};function v(t,o){for(u=t,l=o,n=0;!s&&c&&!r&&n<d.length;n++){var r,i=d[n],v=f.p,p=i[2];t>3?(r=p===o)&&(l=i[(u=i[4])?5:(u=3,3)],i[4]=i[5]=e):i[0]<=v&&((r=t<2&&v<i[1])?(u=0,f.v=o,f.n=i[1]):v<p&&(r=t<3||i[0]>o||o>p)&&(i[4]=t,i[5]=o,f.n=p,u=0))}if(r||t>1)return a;throw s=!0,o}return function(r,d,p){if(c>1)throw TypeError("Generator is already running");for(s&&1===d&&v(d,p),u=d,l=p;(n=u<2?e:l)||!s;){i||(u?u<3?(u>1&&(f.n=-1),v(u,l)):f.n=l:f.v=l);try{if(c=2,i){if(u||(r="next"),n=i[r]){if(!(n=n.call(i,l)))throw TypeError("iterator result is not an object");if(!n.done)return n;l=n.value,u<2&&(u=0)}else 1===u&&(n=i.return)&&n.call(i),u<2&&(l=TypeError("The iterator does not provide a '"+r+"' method"),u=1);i=e}else if((n=(s=f.n<0)?l:t.call(o,f))!==a)break}catch(n){i=e,u=1,l=n}finally{c=1}}return{value:n,done:s}}}(t,r,i),!0),d}var a={};function c(){}function d(){}function s(){}n=Object.getPrototypeOf;var f=[][o]?n(n([][o]())):(l(n={},o,function(){return this}),n),v=s.prototype=c.prototype=Object.create(f);function p(e){return Object.setPrototypeOf?Object.setPrototypeOf(e,s):(e.__proto__=s,l(e,r,"GeneratorFunction")),e.prototype=Object.create(v),e}return d.prototype=s,l(v,"constructor",s),l(s,"constructor",d),d.displayName="GeneratorFunction",l(s,r,"GeneratorFunction"),l(v),l(v,r,"Generator"),l(v,o,function(){return this}),l(v,"toString",function(){return"[object Generator]"}),(u=function(){return{w:i,m:p}})()}function l(e,n,t,o){var r=Object.defineProperty;try{r({},"",{})}catch(e){r=0}l=function(e,n,t,o){function i(n,t){l(e,n,function(e){return this._invoke(n,t,e)})}n?r?r(e,n,{value:t,enumerable:!o,configurable:!o,writable:!o}):e[n]=t:(i("next",0),i("throw",1),i("return",2))},l(e,n,t,o)}function c(e,n,t,o,r,i,a){try{var u=e[i](a),l=u.value}catch(e){return void t(e)}u.done?n(l):Promise.resolve(l).then(o,r)}function d(e){return function(){var n=this,t=arguments;return new Promise(function(o,r){var i=e.apply(n,t);function a(e){c(i,o,r,a,u,"next",e)}function u(e){c(i,o,r,a,u,"throw",e)}a(void 0)})}}var s=function(e){if("boolean"==typeof e)return e;if("string"==typeof e){var n=e.trim().toLowerCase();if(n)return!!["1","true","yes","on"].includes(n)||!["0","false","no","off"].includes(n)&&void 0}},f=function(e){var n=Number(e);return!Number.isFinite(n)||n<=0?null:Math.floor(n)},v=function(e){try{switch(e){case"quiet":case"onlineVerbose":case"onlineDrift":case"debug":return!1;case"error":case"desktopVerbose":return!0;default:return}}catch(e){return}};!function(){var e,n,t,o;if("undefined"!=typeof window){var r=v("quiet"),i=v("error"),a=v("onlineVerbose"),u=v("onlineDrift"),l=v("debug"),c=null!==(e=v("desktopVerbose"))&&void 0!==e?e:"undefined"!=typeof process?null!==(n=s(null===(t=process.env)||void 0===t?void 0:"true"))&&void 0!==n?n:s(null===(o=process.env)||void 0===o?void 0:"true"):void 0;"boolean"==typeof r&&"boolean"!=typeof window.__VEJICE_QUIET_LOGS__&&(window.__VEJICE_QUIET_LOGS__=r),"boolean"==typeof i&&"boolean"!=typeof window.__VEJICE_ERROR_LOGS__&&(window.__VEJICE_ERROR_LOGS__=i),"boolean"==typeof a&&"boolean"!=typeof window.__VEJICE_ONLINE_VERBOSE_LOGS__&&(window.__VEJICE_ONLINE_VERBOSE_LOGS__=a),"boolean"==typeof u&&"boolean"!=typeof window.__VEJICE_ONLINE_DRIFT_LOGS__&&(window.__VEJICE_ONLINE_DRIFT_LOGS__=u),"boolean"==typeof l&&"boolean"!=typeof window.__VEJICE_DEBUG__&&(window.__VEJICE_DEBUG__=l),"boolean"==typeof c&&(window.__VEJICE_DESKTOP_VERBOSE_LOGS=c)}}();var p=function(){if("undefined"!=typeof window){var e=s(window.__VEJICE_ONLINE_VERBOSE_LOGS__);if("boolean"==typeof e)return e;var n=s(window.__VEJICE_DEBUG__);if("boolean"==typeof n)return n}var t=v("onlineVerbose");if("boolean"==typeof t)return t;var o=v("debug");if("boolean"==typeof o)return o;if("undefined"!=typeof process){var r,i,a=s(null===(r=process.env)||void 0===r?void 0:"false");if("boolean"==typeof a)return a;var u=s(null===(i=process.env)||void 0===i?void 0:"false");if("boolean"==typeof u)return u}return!1},m=function(){var e;if(p()){for(var n=arguments.length,t=new Array(n),o=0;o<n;o++)t[o]=arguments[o];(e=console).log.apply(e,["[Vejice Taskpane]"].concat(t))}},g=function(){var e;if(p()){for(var n=arguments.length,t=new Array(n),o=0;o<n;o++)t[o]=arguments[o];(e=console).error.apply(e,["[Vejice Taskpane]"].concat(t))}},b=function(e){try{var n,t=String((null==e?void 0:e.filename)||"").toLowerCase(),o=String((null==e?void 0:e.stack)||(null==e||null===(n=e.reason)||void 0===n?void 0:n.stack)||"").toLowerCase();if(t.includes("localhost:4001"))return!0;if(o.includes("localhost:4001"))return!0;if(o.includes("taskpane.js")||o.includes("preverivejice.js"))return!0}catch(e){}return!1},y=function(e,n){g(e,n);try{var t,o,r=(null==n?void 0:n.message)||(null==n||null===(t=n.reason)||void 0===t?void 0:t.message)||(null==n?void 0:n.reason)||(null==n||null===(o=n.error)||void 0===o?void 0:o.message)||(null==n?void 0:n.error)||n,i=String(r||"Neznana napaka"),a=document.getElementById("status-line");a&&(a.textContent="Napaka ob zagonu: ".concat(i))}catch(e){}};"undefined"!=typeof window&&(window.addEventListener("error",function(e){b(e)&&y("window.error",(null==e?void 0:e.error)||(null==e?void 0:e.message)||e)}),window.addEventListener("unhandledrejection",function(e){var n,t=null!==(n=null==e?void 0:e.reason)&&void 0!==n?n:e;b(t)&&y("window.unhandledrejection",t)}));var h,E,w=!1,_=!1,k=!1,j=0,P=0,S="",N=(E=null,"undefined"!=typeof window&&(E=f(window.__VEJICE_CHECK_RUN_WATCHDOG_MS)),null==E&&"undefined"!=typeof process&&(E=f(null===(h=process.env)||void 0===h?void 0:h.VEJICE_CHECK_RUN_WATCHDOG_MS)),null!=E?E:42e4),I=function(){var e,n=null;return"undefined"!=typeof window&&(n=f(window.__VEJICE_CHECK_MAX_PARTIAL_PASSES)),null==n&&"undefined"!=typeof process&&(n=f(null===(e=process.env)||void 0===e?void 0:e.VEJICE_CHECK_MAX_PARTIAL_PASSES)),null!=n?n:300}(),C=function(){var e,n=null;return"undefined"!=typeof window&&(n=f(window.__VEJICE_CHECK_MAX_REPEATED_PROGRESS)),null==n&&"undefined"!=typeof process&&(n=f(null===(e=process.env)||void 0===e?void 0:e.VEJICE_CHECK_MAX_REPEATED_PROGRESS)),null!=n?n:12}(),O="Napaka. Poskusite še enkrat.",L="Preverite internetno povezavo.",T=null,B={forceNotifications:!1,includePendingStatus:!1},A=function(){try{return"undefined"!=typeof navigator&&!1===navigator.onLine}catch(e){return!1}},R=function(){var e=d(u().m(function e(n){var t,o,r=arguments;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:return t=r.length>1&&void 0!==r[1]?r[1]:N,o=null,e.p=1,e.n=2,Promise.race([Promise.resolve().then(function(){return n()}),new Promise(function(e,n){o=setTimeout(function(){var e=new Error("check-watchdog-timeout");e.code="CHECK_WATCHDOG_TIMEOUT",n(e)},t)})]);case 2:return e.a(2,e.v);case 3:return e.p=3,o&&clearTimeout(o),e.f(3);case 4:return e.a(2)}},e,null,[[1,,3,4]])}));return function(n){return e.apply(this,arguments)}}(),V=function(){return _&&!1},G=function(e){var n=document.getElementById("status-line");n&&(n.textContent=e)},z=function(){var e,n,t,o,r=(arguments.length>0&&void 0!==arguments[0]?arguments[0]:{}).force,u=void 0!==r&&r,l=document.getElementById("notification-list"),c=document.getElementById("notification-empty"),d=document.getElementById("btn-clear-notifications");if(l&&c){var s,f=l.scrollTop,v=null!==(e=null!==(n=null===(t=document.documentElement)||void 0===t?void 0:t.scrollTop)&&void 0!==n?n:null===(o=document.body)||void 0===o?void 0:o.scrollTop)&&void 0!==e?e:0,p=(0,i.Op)().slice(-30).reverse(),m=(s=p,Array.isArray(s)&&s.length?s.map(function(e){return"".concat(e.id,":").concat(e.timestamp)}).join("|"):"empty");if(u||m!==S){if(S=m,l.innerHTML="",!p.length)return c.hidden=!1,void(d&&(d.disabled=!0));c.hidden=!0,d&&(d.disabled=!1);var g,b=function(e,n){var t="undefined"!=typeof Symbol&&e[Symbol.iterator]||e["@@iterator"];if(!t){if(Array.isArray(e)||(t=function(e,n){if(e){if("string"==typeof e)return a(e,n);var t={}.toString.call(e).slice(8,-1);return"Object"===t&&e.constructor&&(t=e.constructor.name),"Map"===t||"Set"===t?Array.from(e):"Arguments"===t||/^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t)?a(e,n):void 0}}(e))||n&&e&&"number"==typeof e.length){t&&(e=t);var o=0,r=function(){};return{s:r,n:function(){return o>=e.length?{done:!0}:{done:!1,value:e[o++]}},e:function(e){throw e},f:r}}throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method.")}var i,u=!0,l=!1;return{s:function(){t=t.call(e)},n:function(){var e=t.next();return u=e.done,e},e:function(e){l=!0,i=e},f:function(){try{u||null==t.return||t.return()}finally{if(l)throw i}}}}(p);try{for(b.s();!(g=b.n()).done;){var y=g.value,h=document.createElement("li"),E="string"==typeof(null==y?void 0:y.level)?y.level.toLowerCase():"info",w="error"===E||"warn"===E?E:"info";h.className="notification-item notification-item-".concat(w);var _=Number.isFinite(null==y?void 0:y.timestamp)?new Date(y.timestamp).toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}):"",k="string"==typeof(null==y?void 0:y.source)?y.source:"system";h.textContent="".concat((null==y?void 0:y.message)||""),h.title=[_,k].filter(Boolean).join(" | "),l.appendChild(h)}}catch(e){b.e(e)}finally{b.f()}l.scrollTop=f,document.documentElement&&(document.documentElement.scrollTop=v),document.body&&(document.body.scrollTop=v)}}},J=function(e){w=Boolean(e),K({immediate:!0})},D=function(e){!Number.isFinite(e)||e<=0||j<0?j=0:j>=e&&(j=e-1)},M=function(){if(_){var e=(0,o.gf)();D(e.length),e.length?G("Končano. Predlogi: ".concat(e.length,".")):G("")}},H=function(){var e,n,t,r,i,a,u,l,c,d=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},s=d.forceNotifications,f=void 0!==s&&s,v=d.includePendingStatus,p=void 0!==v&&v;e=document.getElementById("btn-check"),n=document.getElementById("btn-clear-highlights"),t=document.getElementById("btn-accept-one"),r=document.getElementById("btn-reject-one"),i=document.getElementById("btn-accept"),a=document.getElementById("btn-reject"),u=(0,o.m0)(),l=V(),c=(_?(0,o.gf)().length:0)>0,function(){var e=document.querySelector(".taskpane-status");if(e){var n=w||k||(0,o.m0)();e.classList.toggle("taskpane-status-loading",n)}}(),e&&(e.disabled=w||u),n&&(n.disabled=w||!_||u||!c),t&&(t.disabled=w||!l||u||!c),r&&(r.disabled=w||!l||u||!c),i&&(i.disabled=w||!l||u||!c),a&&(a.disabled=w||!l||u||!c),z({force:f}),!p||w||k||(0,o.m0)()||M()},K=function(){var e=arguments.length>0&&void 0!==arguments[0]?arguments[0]:{},n=e.forceNotifications,t=void 0!==n&&n,o=e.includePendingStatus,r=void 0!==o&&o,i=e.immediate;if(void 0!==i&&i)return T&&(clearTimeout(T),T=null),B={forceNotifications:!1,includePendingStatus:!1},void H({forceNotifications:t,includePendingStatus:r});B.forceNotifications=B.forceNotifications||t,B.includePendingStatus=B.includePendingStatus||r,T||(T=setTimeout(function(){var e=B;B={forceNotifications:!1,includePendingStatus:!1},T=null,H(e)},120))},U=function(){var e=d(u().m(function e(){var n,t,r,a,l,c,d,s,f,v,p,b,y,h,E,j,S,N,T,B,V,z,D,H,U,x,F,Z,W,q,X,$,Q,Y,ee,ne,te,oe,re,ie,ae;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:if(!((n=Date.now())-P<800)){e.n=1;break}return e.a(2);case 1:if(!(k||w||(0,o.m0)())){e.n=2;break}return G("Preverjanje že poteka."),e.a(2);case 2:if(P=n,k=!0,J(!0),(0,i.b4)(),K({forceNotifications:!0,immediate:!0}),!A()){e.n=3;break}return t="".concat(O," ").concat(L),G(t),(0,i.do)([t],{source:"taskpane",level:"warn"}),k=!1,J(!1),e.a(2);case 3:G("Preverjam dokument ..."),m("runCheck:start",{online:_,busy:w,checkRunInFlight:k,checkInProgress:(0,o.m0)()}),e.p=4,c=null,d=0,s="",f=0;case 5:return e.n=6,R(function(){return(0,o.$z)()});case 6:if(c=e.v,m("runCheck:summary",c),"partial"===(null===(v=c)||void 0===v?void 0:v.status)){e.n=7;break}return e.a(3,9);case 7:if(d+=1,N=Number(null!==(p=null===(b=c)||void 0===b?void 0:b.paragraphStart)&&void 0!==p?p:0),T=Number(null!==(y=null===(h=c)||void 0===h?void 0:h.paragraphEnd)&&void 0!==y?y:0),(B=Number(null!==(E=null===(j=c)||void 0===j?void 0:j.paragraphTotal)&&void 0!==E?E:0))>0&&G("Preverjam dokument ... (".concat(Math.max(0,Math.min(T,B)),"/").concat(B,")")),(V="".concat((null===(S=c)||void 0===S?void 0:S.mode)||"na",":").concat(N,":").concat(T,":").concat(B))===s?f+=1:f=0,D=d>=I,!(z=f>=C)&&!D){e.n=8;break}return m("runCheck:partial-guard-stop",{reachedRepeatedProgressGuard:z,reachedPassCountGuard:D,repeatedPartialProgressCount:f,partialPasses:d,maxRepeatedProgress:C,maxPartialPasses:I,progressKey:V}),e.a(3,9);case 8:s=V,e.n=5;break;case 9:"deferred"===(null===(r=c)||void 0===r?void 0:r.status)?G("Počakajte, da se trenutno opravilo zaključi."):_?M():"blocked"===(null===(a=c)||void 0===a?void 0:a.status)?G("Preverjanje ustavljeno. Poglejte obvestila."):"error"===(null===(l=c)||void 0===l?void 0:l.status)?G("Napaka pri preverjanju."):(Y=Number(null!==(H=null===(U=c)||void 0===U?void 0:U.inserted)&&void 0!==H?H:0),ee=Number(null!==(x=null===(F=c)||void 0===F?void 0:F.deleted)&&void 0!==x?x:0),ne=Number(null!==(Z=null===(W=c)||void 0===W?void 0:W.detected)&&void 0!==Z?Z:0),te=Number(null!==(q=null===(X=c)||void 0===X?void 0:X.apiErrors)&&void 0!==q?q:0),oe=Number(null!==($=null===(Q=c)||void 0===Q?void 0:Q.nonCommaSkips)&&void 0!==$?$:0),G(0===(re=Y+ee)&&0===ne&&0===te&&0===oe?"Končano. Ni bilo najdenih manjkajočih ali napačnih vejic.":re>0?"Končano. Popravki: ".concat(re,"."):"Končano.")),e.n=11;break;case 10:if(e.p=10,ae=e.v,g("check failed",ae),String((null==ae?void 0:ae.code)||(null==ae?void 0:ae.message)||"").includes("CHECK_WATCHDOG_TIMEOUT")){try{(0,o._z)("ui-watchdog-timeout")}catch(e){}try{(0,o.D2)("ui-watchdog-timeout")}catch(e){}}A()?(ie="".concat(O," ").concat(L),G(ie),(0,i.do)([ie],{source:"taskpane",level:"warn"})):(G(O),(0,i.do)([O],{source:"taskpane",level:"error"}));case 11:return e.p=11,m("runCheck:finally",{online:_,busy:w,checkRunInFlight:k,checkInProgress:(0,o.m0)()}),k=!1,J(!1),e.f(11);case 12:return e.a(2)}},e,null,[[4,10,11,12]])}));return function(){return e.apply(this,arguments)}}(),x=function(){var e=d(u().m(function e(){var n,t,r,a,l,c;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:if(_){e.n=1;break}return e.a(2);case 1:if(!w&&!(0,o.m0)()){e.n=2;break}return G("Počakajte, da se preverjanje konča."),e.a(2);case 2:return J(!0),G("Brišem označbe ..."),e.p=3,e.n=4,(0,o.w_)();case 4:r=e.v,a=Number(null!==(n=null==r?void 0:r.clearedMarkers)&&void 0!==n?n:0),l=Number(null!==(t=null==r?void 0:r.failedClear)&&void 0!==t?t:0),"deferred"===(null==r?void 0:r.status)?G("Počakajte, da se trenutno opravilo zaključi."):a>0?(G("Označbe so bile pobrisane."),l>0&&(0,i.do)(["Nekaterih označb ni bilo mogoče pobrisati."],{source:"taskpane",level:"warn"})):(G("Ni označb za pobrisati."),(0,i.do)(["Namig: Znova zaženite preverjanje in nato pobrišite označbe."],{source:"taskpane",level:"info"})),m("clear highlights summary",r),e.n=6;break;case 5:e.p=5,c=e.v,g("clear highlights failed",c),G("Napaka pri brisanju označb.");case 6:return e.p=6,J(!1),e.f(6);case 7:return e.a(2)}},e,null,[[3,5,6,7]])}));return function(){return e.apply(this,arguments)}}(),F=function(){var e=d(u().m(function e(){var n,t,r,i,a,l;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:if(V()){e.n=1;break}return e.a(2);case 1:if(!w&&!(0,o.m0)()){e.n=2;break}return G("Počakajte, da se preverjanje konča."),e.a(2);case 2:return J(!0),G("Sprejemam vse predloge ..."),e.p=3,e.n=4,(0,o.S4)();case 4:r=e.v,i=Number(null!==(n=null==r?void 0:r.appliedSuggestions)&&void 0!==n?n:0),a=Number(null!==(t=null==r?void 0:r.pendingAfter)&&void 0!==t?t:0),G("Sprejeto: ".concat(i,". Preostalo: ").concat(a,".")),m("accept summary",r),e.n=6;break;case 5:e.p=5,l=e.v,g("accept failed",l),G("Napaka pri sprejemanju.");case 6:return e.p=6,J(!1),e.f(6);case 7:return e.a(2)}},e,null,[[3,5,6,7]])}));return function(){return e.apply(this,arguments)}}(),Z=function(){var e=d(u().m(function e(){var n,t,r,i,a,l,c,d;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:if(V()){e.n=1;break}return e.a(2);case 1:if(!w&&!(0,o.m0)()){e.n=2;break}return G("Počakajte, da se preverjanje konča."),e.a(2);case 2:return J(!0),G("Zavračam vse predloge ..."),e.p=3,e.n=4,(0,o.jJ)();case 4:i=e.v,a=Number(null!==(n=null==i?void 0:i.clearedMarkers)&&void 0!==n?n:0),l=Number(null!==(t=null==i?void 0:i.revertedAppliedSuggestions)&&void 0!==t?t:0),c=Number(null!==(r=null==i?void 0:i.pendingAfter)&&void 0!==r?r:0),G(l>0?"Zavrnjeno: ".concat(a,". Razveljavljeno: ").concat(l,". Preostalo: ").concat(c,"."):"Zavrnjeno: ".concat(a,". Preostalo: ").concat(c,".")),m("reject summary",i),e.n=6;break;case 5:e.p=5,d=e.v,g("reject failed",d),G("Napaka pri zavracanju.");case 6:return e.p=6,J(!1),e.f(6);case 7:return e.a(2)}},e,null,[[3,5,6,7]])}));return function(){return e.apply(this,arguments)}}(),W=function(){var e=d(u().m(function e(){var n,t,r,i,a,l,c,d;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:if(V()){e.n=1;break}return e.a(2);case 1:if(!w&&!(0,o.m0)()){e.n=2;break}return G("Pocakajte, da se preverjanje konca."),e.a(2);case 2:if((n=(0,o.gf)()).length){e.n=3;break}return G("Ni predlogov za sprejem."),e.a(2);case 3:if(D(n.length),t=n[j]){e.n=4;break}return G("Predlog ni vec na voljo."),e.a(2);case 4:return J(!0),G("Sprejemam trenutni predlog ..."),e.p=5,e.n=6,(0,o.U1)(t.id);case 6:a=e.v,l=Number(null!==(r=null==a?void 0:a.pendingAfter)&&void 0!==r?r:0),c=Number(null!==(i=null==a?void 0:a.appliedSuggestions)&&void 0!==i?i:0),D(l),"applied"===(null==a?void 0:a.status)||"partial"===(null==a?void 0:a.status)?"suggestion-skipped-unresolvable"===(null==a?void 0:a.reason)?G("Predloga ni bilo mogoce sprejeti, zato je bil preskocen. Preostalo: ".concat(l,".")):G("Sprejeto: ".concat(c>0?c:1,". Preostalo: ").concat(l,".")):"already-applied"===(null==a?void 0:a.reason)?G("Predlog je bil že upoštevan. Preostalo: ".concat(l,".")):"suggestion-skipped-unresolvable"===(null==a?void 0:a.reason)?G("Predloga ni bilo mogoce sprejeti, zato je bil preskocen. Preostalo: ".concat(l,".")):G("Predloga ni bilo mogoce sprejeti."),m("accept one summary",a),e.n=8;break;case 7:e.p=7,d=e.v,g("accept one failed",d),G("Napaka pri sprejemanju predloga.");case 8:return e.p=8,J(!1),e.f(8);case 9:return e.a(2)}},e,null,[[5,7,8,9]])}));return function(){return e.apply(this,arguments)}}(),q=function(){var e=d(u().m(function e(){var n,t,r,i,a,l,c,d,s,f;return u().w(function(e){for(;;)switch(e.p=e.n){case 0:if(V()){e.n=1;break}return e.a(2);case 1:if(!w&&!(0,o.m0)()){e.n=2;break}return G("Pocakajte, da se preverjanje konca."),e.a(2);case 2:if((n=(0,o.gf)()).length){e.n=3;break}return G("Ni predlogov za zavrnitev."),e.a(2);case 3:if(D(n.length),t=n[j]){e.n=4;break}return G("Predlog ni vec na voljo."),e.a(2);case 4:return J(!0),G("Zavracam trenutni predlog ..."),e.p=5,e.n=6,(0,o.$N)(t.id);case 6:l=e.v,c=Number(null!==(r=null==l?void 0:l.pendingAfter)&&void 0!==r?r:0),d=Number(null!==(i=null==l?void 0:l.rejectedSuggestions)&&void 0!==i?i:0),s=Number(null!==(a=null==l?void 0:l.revertedAppliedSuggestions)&&void 0!==a?a:0),D(c),"rejected"===(null==l?void 0:l.status)||"partial"===(null==l?void 0:l.status)?G(s>0?"Zavrnjeno: ".concat(d>0?d:1,". Razveljavljeno: ").concat(s,". Preostalo: ").concat(c,"."):"Zavrnjeno: ".concat(d>0?d:1,". Preostalo: ").concat(c,".")):G("Predloga ni bilo mogoce zavrniti."),m("reject one summary",l),e.n=8;break;case 7:e.p=7,f=e.v,g("reject one failed",f),G("Napaka pri zavracanju predloga.");case 8:return e.p=8,J(!1),e.f(8);case 9:return e.a(2)}},e,null,[[5,7,8,9]])}));return function(){return e.apply(this,arguments)}}();Office.onReady(function(e){var n;if(e.host===Office.HostType.Word){var t=document.getElementById("sideload-msg"),a=document.getElementById("app-body");t&&(t.style.display="none"),a&&(a.style.display="flex");var u=function(){if("undefined"==typeof window||"undefined"==typeof URLSearchParams)return null;try{var e=(new URLSearchParams(window.location.search||"").get("mode")||"").trim().toLowerCase();if("web"===e)return"web";if("desktop"===e)return"desktop"}catch(e){g("Failed to resolve taskpane mode from query",e)}return null}();if(_=u?"web"===u:(0,r.g)(),m("taskpane:ready",{host:e.host,platform:null===(n=Office)||void 0===n||null===(n=n.context)||void 0===n?void 0:n.platform,mode:u,online:_,href:"undefined"!=typeof window?window.location.href:""}),(0,i.b4)(),S="",_){var l=(0,o.yw)();l>0&&m("Restored pending suggestions after taskpane load:",l)}var c=document.getElementById("btn-accept"),d=document.getElementById("btn-reject"),s=document.getElementById("btn-clear-highlights"),f=document.getElementById("btn-accept-one"),v=document.getElementById("btn-reject-one"),p=document.getElementById("secondary-actions"),b=document.getElementById("taskpane-subtitle"),y=V();b&&(b.textContent=_?"Preverite postavitev vejic v dokumentu.":"Vejice urejate s Sledi spremembam."),y||(p&&(p.hidden=!0),f&&(f.hidden=!0),v&&(v.hidden=!0),c&&(c.hidden=!0),d&&(d.hidden=!0)),_||s&&(s.hidden=!0);var h=document.getElementById("btn-check"),E=document.getElementById("btn-clear-highlights"),k=document.getElementById("btn-clear-notifications");h&&h.addEventListener("click",function(){U()}),E&&E.addEventListener("click",function(){x()}),y&&f&&f.addEventListener("click",function(){W()}),y&&v&&v.addEventListener("click",function(){q()}),y&&c&&c.addEventListener("click",function(){F()}),y&&d&&d.addEventListener("click",function(){Z()}),k&&k.addEventListener("click",function(){(0,i.b4)(),K({forceNotifications:!0,immediate:!0})}),"undefined"!=typeof window&&(window.addEventListener("storage",function(e){e&&(e.key!==i.U8?e.key===o.dN&&K({includePendingStatus:!0}):K({forceNotifications:!0}))}),window.addEventListener(i.ln,function(){K({forceNotifications:!0})}),window.addEventListener(o.MN,function(){K()}),window.addEventListener("focus",function(){K({includePendingStatus:!0})}),window.addEventListener("online",function(){K({includePendingStatus:!0})}),window.addEventListener("offline",function(){K()})),"undefined"!=typeof document&&document.addEventListener("visibilitychange",function(){"visible"===document.visibilityState&&K({includePendingStatus:!0})}),w=!1,K({forceNotifications:!0,includePendingStatus:!0,immediate:!0})}})}},function(e){e.O(0,[76],function(){return e(e.s=4594)}),e.O()}]);
+"use strict";
+(self["webpackChunkoffice_addin_taskpane_js"] = self["webpackChunkoffice_addin_taskpane_js"] || []).push([["taskpane"],{
+
+/***/ "./src/taskpane/taskpane.js":
+/*!**********************************!*\
+  !*** ./src/taskpane/taskpane.js ***!
+  \**********************************/
+/***/ (function(__unused_webpack_module, __webpack_exports__, __webpack_require__) {
+
+__webpack_require__.r(__webpack_exports__);
+/* harmony import */ var _logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__ = __webpack_require__(/*! ../logic/preveriVejice.js */ "./src/logic/preveriVejice.js");
+/* harmony import */ var _utils_host_js__WEBPACK_IMPORTED_MODULE_1__ = __webpack_require__(/*! ../utils/host.js */ "./src/utils/host.js");
+/* harmony import */ var _utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__ = __webpack_require__(/*! ../utils/notifications.js */ "./src/utils/notifications.js");
+function _createForOfIteratorHelper(r, e) { var t = "undefined" != typeof Symbol && r[Symbol.iterator] || r["@@iterator"]; if (!t) { if (Array.isArray(r) || (t = _unsupportedIterableToArray(r)) || e && r && "number" == typeof r.length) { t && (r = t); var _n = 0, F = function F() {}; return { s: F, n: function n() { return _n >= r.length ? { done: !0 } : { done: !1, value: r[_n++] }; }, e: function e(r) { throw r; }, f: F }; } throw new TypeError("Invalid attempt to iterate non-iterable instance.\nIn order to be iterable, non-array objects must have a [Symbol.iterator]() method."); } var o, a = !0, u = !1; return { s: function s() { t = t.call(r); }, n: function n() { var r = t.next(); return a = r.done, r; }, e: function e(r) { u = !0, o = r; }, f: function f() { try { a || null == t.return || t.return(); } finally { if (u) throw o; } } }; }
+function _unsupportedIterableToArray(r, a) { if (r) { if ("string" == typeof r) return _arrayLikeToArray(r, a); var t = {}.toString.call(r).slice(8, -1); return "Object" === t && r.constructor && (t = r.constructor.name), "Map" === t || "Set" === t ? Array.from(r) : "Arguments" === t || /^(?:Ui|I)nt(?:8|16|32)(?:Clamped)?Array$/.test(t) ? _arrayLikeToArray(r, a) : void 0; } }
+function _arrayLikeToArray(r, a) { (null == a || a > r.length) && (a = r.length); for (var e = 0, n = Array(a); e < a; e++) n[e] = r[e]; return n; }
+function _typeof(o) { "@babel/helpers - typeof"; return _typeof = "function" == typeof Symbol && "symbol" == typeof Symbol.iterator ? function (o) { return typeof o; } : function (o) { return o && "function" == typeof Symbol && o.constructor === Symbol && o !== Symbol.prototype ? "symbol" : typeof o; }, _typeof(o); }
+function _regenerator() { /*! regenerator-runtime -- Copyright (c) 2014-present, Facebook, Inc. -- license (MIT): https://github.com/babel/babel/blob/main/packages/babel-helpers/LICENSE */ var e, t, r = "function" == typeof Symbol ? Symbol : {}, n = r.iterator || "@@iterator", o = r.toStringTag || "@@toStringTag"; function i(r, n, o, i) { var c = n && n.prototype instanceof Generator ? n : Generator, u = Object.create(c.prototype); return _regeneratorDefine2(u, "_invoke", function (r, n, o) { var i, c, u, f = 0, p = o || [], y = !1, G = { p: 0, n: 0, v: e, a: d, f: d.bind(e, 4), d: function d(t, r) { return i = t, c = 0, u = e, G.n = r, a; } }; function d(r, n) { for (c = r, u = n, t = 0; !y && f && !o && t < p.length; t++) { var o, i = p[t], d = G.p, l = i[2]; r > 3 ? (o = l === n) && (u = i[(c = i[4]) ? 5 : (c = 3, 3)], i[4] = i[5] = e) : i[0] <= d && ((o = r < 2 && d < i[1]) ? (c = 0, G.v = n, G.n = i[1]) : d < l && (o = r < 3 || i[0] > n || n > l) && (i[4] = r, i[5] = n, G.n = l, c = 0)); } if (o || r > 1) return a; throw y = !0, n; } return function (o, p, l) { if (f > 1) throw TypeError("Generator is already running"); for (y && 1 === p && d(p, l), c = p, u = l; (t = c < 2 ? e : u) || !y;) { i || (c ? c < 3 ? (c > 1 && (G.n = -1), d(c, u)) : G.n = u : G.v = u); try { if (f = 2, i) { if (c || (o = "next"), t = i[o]) { if (!(t = t.call(i, u))) throw TypeError("iterator result is not an object"); if (!t.done) return t; u = t.value, c < 2 && (c = 0); } else 1 === c && (t = i.return) && t.call(i), c < 2 && (u = TypeError("The iterator does not provide a '" + o + "' method"), c = 1); i = e; } else if ((t = (y = G.n < 0) ? u : r.call(n, G)) !== a) break; } catch (t) { i = e, c = 1, u = t; } finally { f = 1; } } return { value: t, done: y }; }; }(r, o, i), !0), u; } var a = {}; function Generator() {} function GeneratorFunction() {} function GeneratorFunctionPrototype() {} t = Object.getPrototypeOf; var c = [][n] ? t(t([][n]())) : (_regeneratorDefine2(t = {}, n, function () { return this; }), t), u = GeneratorFunctionPrototype.prototype = Generator.prototype = Object.create(c); function f(e) { return Object.setPrototypeOf ? Object.setPrototypeOf(e, GeneratorFunctionPrototype) : (e.__proto__ = GeneratorFunctionPrototype, _regeneratorDefine2(e, o, "GeneratorFunction")), e.prototype = Object.create(u), e; } return GeneratorFunction.prototype = GeneratorFunctionPrototype, _regeneratorDefine2(u, "constructor", GeneratorFunctionPrototype), _regeneratorDefine2(GeneratorFunctionPrototype, "constructor", GeneratorFunction), GeneratorFunction.displayName = "GeneratorFunction", _regeneratorDefine2(GeneratorFunctionPrototype, o, "GeneratorFunction"), _regeneratorDefine2(u), _regeneratorDefine2(u, o, "Generator"), _regeneratorDefine2(u, n, function () { return this; }), _regeneratorDefine2(u, "toString", function () { return "[object Generator]"; }), (_regenerator = function _regenerator() { return { w: i, m: f }; })(); }
+function _regeneratorDefine2(e, r, n, t) { var i = Object.defineProperty; try { i({}, "", {}); } catch (e) { i = 0; } _regeneratorDefine2 = function _regeneratorDefine(e, r, n, t) { function o(r, n) { _regeneratorDefine2(e, r, function (e) { return this._invoke(r, n, e); }); } r ? i ? i(e, r, { value: n, enumerable: !t, configurable: !t, writable: !t }) : e[r] = n : (o("next", 0), o("throw", 1), o("return", 2)); }, _regeneratorDefine2(e, r, n, t); }
+function asyncGeneratorStep(n, t, e, r, o, a, c) { try { var i = n[a](c), u = i.value; } catch (n) { return void e(n); } i.done ? t(u) : Promise.resolve(u).then(r, o); }
+function _asyncToGenerator(n) { return function () { var t = this, e = arguments; return new Promise(function (r, o) { var a = n.apply(t, e); function _next(n) { asyncGeneratorStep(a, r, o, _next, _throw, "next", n); } function _throw(n) { asyncGeneratorStep(a, r, o, _next, _throw, "throw", n); } _next(void 0); }); }; }
+/* global document, Office, Word, console, window, URLSearchParams, navigator, process, __VEJICE_ENABLE_ONLINE_REVIEW_ACTIONS__, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__, __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__, __VEJICE_BUILD_CHECK_RUN_WATCHDOG_MS__, __VEJICE_BUILD_CHECK_MAX_PARTIAL_PASSES__, __VEJICE_BUILD_CHECK_MAX_REPEATED_PROGRESS__ */
+
+
+
+
+var parseBooleanFlag = function parseBooleanFlag(value) {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string") return undefined;
+  var normalized = value.trim().toLowerCase();
+  if (!normalized) return undefined;
+  if (["1", "true", "yes", "on"].includes(normalized)) return true;
+  if (["0", "false", "no", "off"].includes(normalized)) return false;
+  return undefined;
+};
+var parsePositiveInteger = function parsePositiveInteger(value) {
+  var parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return Math.floor(parsed);
+};
+var getBuildNumberFlag = function getBuildNumberFlag(flagName) {
+  try {
+    switch (flagName) {
+      case "checkRunWatchdogMs":
+        return parsePositiveInteger( true ? "10800000" : 0);
+      case "checkMaxPartialPasses":
+        return parsePositiveInteger( true ? "1200" : 0);
+      case "checkMaxRepeatedProgress":
+        return parsePositiveInteger( true ? "40" : 0);
+      default:
+        return null;
+    }
+  } catch (_err) {
+    return null;
+  }
+};
+var resolveCheckRunWatchdogMs = function resolveCheckRunWatchdogMs() {
+  var override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_CHECK_RUN_WATCHDOG_MS);
+  }
+  if (override == null) {
+    override = getBuildNumberFlag("checkRunWatchdogMs");
+  }
+  if (override == null && typeof process !== "undefined") {
+    var _process$env;
+    override = parsePositiveInteger((_process$env = process.env) === null || _process$env === void 0 ? void 0 : "10800000");
+  }
+  return override !== null && override !== void 0 ? override : 420000;
+};
+var resolveCheckMaxPartialPasses = function resolveCheckMaxPartialPasses() {
+  var override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_CHECK_MAX_PARTIAL_PASSES);
+  }
+  if (override == null) {
+    override = getBuildNumberFlag("checkMaxPartialPasses");
+  }
+  if (override == null && typeof process !== "undefined") {
+    var _process$env2;
+    override = parsePositiveInteger((_process$env2 = process.env) === null || _process$env2 === void 0 ? void 0 : "1200");
+  }
+  return override !== null && override !== void 0 ? override : 300;
+};
+var resolveCheckMaxRepeatedProgress = function resolveCheckMaxRepeatedProgress() {
+  var override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_CHECK_MAX_REPEATED_PROGRESS);
+  }
+  if (override == null) {
+    override = getBuildNumberFlag("checkMaxRepeatedProgress");
+  }
+  if (override == null && typeof process !== "undefined") {
+    var _process$env3;
+    override = parsePositiveInteger((_process$env3 = process.env) === null || _process$env3 === void 0 ? void 0 : "40");
+  }
+  return override !== null && override !== void 0 ? override : 12;
+};
+var getBuildBooleanFlag = function getBuildBooleanFlag(flagName) {
+  try {
+    switch (flagName) {
+      case "quiet":
+        return  true ? false : 0;
+      case "error":
+        return  true ? true : 0;
+      case "onlineVerbose":
+        return  true ? false : 0;
+      case "onlineDrift":
+        return  true ? false : 0;
+      case "debug":
+        return  true ? false : 0;
+      case "desktopVerbose":
+        return  true ? true : 0;
+      default:
+        return undefined;
+    }
+  } catch (_err) {
+    return undefined;
+  }
+};
+var applyBuildDebugFlagsToWindow = function applyBuildDebugFlagsToWindow() {
+  var _getBuildBooleanFlag, _parseBooleanFlag, _process$env4, _process$env5;
+  if (typeof window === "undefined") return;
+  var quiet = getBuildBooleanFlag("quiet");
+  var error = getBuildBooleanFlag("error");
+  var onlineVerbose = getBuildBooleanFlag("onlineVerbose");
+  var onlineDrift = getBuildBooleanFlag("onlineDrift");
+  var debug = getBuildBooleanFlag("debug");
+  var desktopVerbose = (_getBuildBooleanFlag = getBuildBooleanFlag("desktopVerbose")) !== null && _getBuildBooleanFlag !== void 0 ? _getBuildBooleanFlag : typeof process !== "undefined" ? (_parseBooleanFlag = parseBooleanFlag((_process$env4 = process.env) === null || _process$env4 === void 0 ? void 0 : "true")) !== null && _parseBooleanFlag !== void 0 ? _parseBooleanFlag : parseBooleanFlag((_process$env5 = process.env) === null || _process$env5 === void 0 ? void 0 : "true") : undefined;
+  if (typeof quiet === "boolean" && typeof window.__VEJICE_QUIET_LOGS__ !== "boolean") {
+    window.__VEJICE_QUIET_LOGS__ = quiet;
+  }
+  if (typeof error === "boolean" && typeof window.__VEJICE_ERROR_LOGS__ !== "boolean") {
+    window.__VEJICE_ERROR_LOGS__ = error;
+  }
+  if (typeof onlineVerbose === "boolean" && typeof window.__VEJICE_ONLINE_VERBOSE_LOGS__ !== "boolean") {
+    window.__VEJICE_ONLINE_VERBOSE_LOGS__ = onlineVerbose;
+  }
+  if (typeof onlineDrift === "boolean" && typeof window.__VEJICE_ONLINE_DRIFT_LOGS__ !== "boolean") {
+    window.__VEJICE_ONLINE_DRIFT_LOGS__ = onlineDrift;
+  }
+  if (typeof debug === "boolean" && typeof window.__VEJICE_DEBUG__ !== "boolean") {
+    window.__VEJICE_DEBUG__ = debug;
+  }
+  if (typeof desktopVerbose === "boolean") {
+    window.__VEJICE_DESKTOP_VERBOSE_LOGS = desktopVerbose;
+  }
+};
+applyBuildDebugFlagsToWindow();
+var isTaskpaneDebugEnabled = function isTaskpaneDebugEnabled() {
+  if (typeof window !== "undefined") {
+    var onlineVerboseOverride = parseBooleanFlag(window.__VEJICE_ONLINE_VERBOSE_LOGS__);
+    if (typeof onlineVerboseOverride === "boolean") return onlineVerboseOverride;
+    var debugOverride = parseBooleanFlag(window.__VEJICE_DEBUG__);
+    if (typeof debugOverride === "boolean") return debugOverride;
+  }
+  var buildOnlineVerbose = getBuildBooleanFlag("onlineVerbose");
+  if (typeof buildOnlineVerbose === "boolean") return buildOnlineVerbose;
+  var buildDebug = getBuildBooleanFlag("debug");
+  if (typeof buildDebug === "boolean") return buildDebug;
+  if (typeof process !== "undefined") {
+    var _process$env6, _process$env7;
+    var envOnlineVerbose = parseBooleanFlag((_process$env6 = process.env) === null || _process$env6 === void 0 ? void 0 : "false");
+    if (typeof envOnlineVerbose === "boolean") return envOnlineVerbose;
+    var envDebug = parseBooleanFlag((_process$env7 = process.env) === null || _process$env7 === void 0 ? void 0 : "false");
+    if (typeof envDebug === "boolean") return envDebug;
+  }
+  return false;
+};
+var taskpaneLogTimestamp = function taskpaneLogTimestamp() {
+  try {
+    return new Date().toISOString();
+  } catch (_err) {
+    return String(Date.now());
+  }
+};
+var log = function log() {
+  var _console;
+  if (!isTaskpaneDebugEnabled()) return;
+  for (var _len = arguments.length, args = new Array(_len), _key = 0; _key < _len; _key++) {
+    args[_key] = arguments[_key];
+  }
+  (_console = console).log.apply(_console, ["[".concat(taskpaneLogTimestamp(), "] [Vejice Taskpane]")].concat(args));
+};
+var errL = function errL() {
+  var _console2;
+  if (!isTaskpaneDebugEnabled()) return;
+  for (var _len2 = arguments.length, args = new Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {
+    args[_key2] = arguments[_key2];
+  }
+  (_console2 = console).error.apply(_console2, ["[".concat(taskpaneLogTimestamp(), "] [Vejice Taskpane]")].concat(args));
+};
+var ENABLE_ONLINE_REVIEW_ACTIONS =  true ? false : 0;
+var isLikelyAddinRuntimeError = function isLikelyAddinRuntimeError(eventOrReason) {
+  try {
+    var _eventOrReason$reason;
+    var filename = String((eventOrReason === null || eventOrReason === void 0 ? void 0 : eventOrReason.filename) || "").toLowerCase();
+    var stack = String((eventOrReason === null || eventOrReason === void 0 ? void 0 : eventOrReason.stack) || (eventOrReason === null || eventOrReason === void 0 || (_eventOrReason$reason = eventOrReason.reason) === null || _eventOrReason$reason === void 0 ? void 0 : _eventOrReason$reason.stack) || "").toLowerCase();
+    if (filename.includes("localhost:4001")) return true;
+    if (stack.includes("localhost:4001")) return true;
+    if (stack.includes("taskpane.js") || stack.includes("preverivejice.js")) return true;
+  } catch (_err) {
+    // ignore inspection failures
+  }
+  return false;
+};
+var reportStartupError = function reportStartupError(label, payload) {
+  errL(label, payload);
+  try {
+    var _payload$reason, _payload$error;
+    var rawMessage = (payload === null || payload === void 0 ? void 0 : payload.message) || (payload === null || payload === void 0 || (_payload$reason = payload.reason) === null || _payload$reason === void 0 ? void 0 : _payload$reason.message) || (payload === null || payload === void 0 ? void 0 : payload.reason) || (payload === null || payload === void 0 || (_payload$error = payload.error) === null || _payload$error === void 0 ? void 0 : _payload$error.message) || (payload === null || payload === void 0 ? void 0 : payload.error) || payload;
+    var message = String(rawMessage || "Neznana napaka");
+    var statusLine = document.getElementById("status-line");
+    if (statusLine) {
+      statusLine.textContent = "Napaka ob zagonu: ".concat(message);
+    }
+  } catch (_err) {
+    // ignore UI reporting failures
+  }
+};
+if (typeof window !== "undefined") {
+  window.addEventListener("error", function (event) {
+    if (!isLikelyAddinRuntimeError(event)) return;
+    reportStartupError("window.error", (event === null || event === void 0 ? void 0 : event.error) || (event === null || event === void 0 ? void 0 : event.message) || event);
+  });
+  window.addEventListener("unhandledrejection", function (event) {
+    var _event$reason;
+    var reason = (_event$reason = event === null || event === void 0 ? void 0 : event.reason) !== null && _event$reason !== void 0 ? _event$reason : event;
+    if (!isLikelyAddinRuntimeError(reason)) return;
+    reportStartupError("window.unhandledrejection", reason);
+  });
+}
+var busy = false;
+var online = false;
+var checkRunInFlight = false;
+var checkStopRequested = false;
+var currentSuggestionIndex = 0;
+var lastCheckClickAt = 0;
+var CHECK_CLICK_DEBOUNCE_MS = 800;
+var MAX_VISIBLE_NOTIFICATIONS = 30;
+var lastNotificationSignature = "";
+var CHECK_RUN_WATCHDOG_MS = resolveCheckRunWatchdogMs();
+var CHECK_MAX_PARTIAL_PASSES = resolveCheckMaxPartialPasses();
+var CHECK_MAX_REPEATED_PROGRESS = resolveCheckMaxRepeatedProgress();
+var CHECK_GENERIC_ERROR_MESSAGE = "Napaka. Poskusite \u0161e enkrat.";
+var CHECK_OFFLINE_HINT_MESSAGE = "Preverite internetno povezavo.";
+var TASKPANE_SUBTITLE_WEB = "Preverite postavitev vejic v dokumentu.";
+var TASKPANE_SUBTITLE_DESKTOP = "Vejice urejate s Sledi spremembam.";
+var UI_REFRESH_DEBOUNCE_MS = 120;
+var uiRefreshTimerId = null;
+var pendingUiRefresh = {
+  forceNotifications: false,
+  includePendingStatus: false
+};
+var isOffline = function isOffline() {
+  try {
+    return typeof navigator !== "undefined" && navigator.onLine === false;
+  } catch (_err) {
+    return false;
+  }
+};
+var withCheckWatchdog = /*#__PURE__*/function () {
+  var _ref = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee(promiseFactory) {
+    var timeoutMs,
+      timeoutId,
+      _args = arguments;
+    return _regenerator().w(function (_context) {
+      while (1) switch (_context.p = _context.n) {
+        case 0:
+          timeoutMs = _args.length > 1 && _args[1] !== undefined ? _args[1] : CHECK_RUN_WATCHDOG_MS;
+          timeoutId = null;
+          _context.p = 1;
+          _context.n = 2;
+          return Promise.race([Promise.resolve().then(function () {
+            return promiseFactory();
+          }), new Promise(function (_, reject) {
+            timeoutId = setTimeout(function () {
+              var watchdogError = new Error("check-watchdog-timeout");
+              watchdogError.code = "CHECK_WATCHDOG_TIMEOUT";
+              reject(watchdogError);
+            }, timeoutMs);
+          })]);
+        case 2:
+          return _context.a(2, _context.v);
+        case 3:
+          _context.p = 3;
+          if (timeoutId) clearTimeout(timeoutId);
+          return _context.f(3);
+        case 4:
+          return _context.a(2);
+      }
+    }, _callee, null, [[1,, 3, 4]]);
+  }));
+  return function withCheckWatchdog(_x) {
+    return _ref.apply(this, arguments);
+  };
+}();
+var canUseOnlineReviewActions = function canUseOnlineReviewActions() {
+  return online && ENABLE_ONLINE_REVIEW_ACTIONS;
+};
+var resolveManifestMode = function resolveManifestMode() {
+  if (typeof window === "undefined" || typeof URLSearchParams === "undefined") return null;
+  try {
+    var params = new URLSearchParams(window.location.search || "");
+    var mode = (params.get("mode") || "").trim().toLowerCase();
+    if (mode === "web") return "web";
+    if (mode === "desktop") return "desktop";
+  } catch (err) {
+    errL("Failed to resolve taskpane mode from query", err);
+  }
+  return null;
+};
+var setStatus = function setStatus(message) {
+  var statusLine = document.getElementById("status-line");
+  if (statusLine) statusLine.textContent = message;
+};
+var readRuntimeStateSnapshot = function readRuntimeStateSnapshot() {
+  if (typeof window === "undefined") return null;
+  try {
+    var storage = window.localStorage;
+    if (!storage) return null;
+    var raw = storage.getItem(_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.RUNTIME_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    var parsed = JSON.parse(raw);
+    return parsed && _typeof(parsed) === "object" ? parsed : null;
+  } catch (_err) {
+    return null;
+  }
+};
+var syncStatusLoadingIndicator = function syncStatusLoadingIndicator() {
+  var statusRoot = document.querySelector(".taskpane-status");
+  if (!statusRoot) return;
+  var loading = busy || checkRunInFlight || (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)();
+  statusRoot.classList.toggle("taskpane-status-loading", loading);
+};
+var buildNotificationSignature = function buildNotificationSignature(items) {
+  if (!Array.isArray(items) || !items.length) return "empty";
+  return items.map(function (item) {
+    return "".concat(item.id, ":").concat(item.timestamp);
+  }).join("|");
+};
+var renderNotifications = function renderNotifications() {
+  var _ref3, _document$documentEle, _document$documentEle2, _document$body;
+  var _ref2 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+    _ref2$force = _ref2.force,
+    force = _ref2$force === void 0 ? false : _ref2$force;
+  var listEl = document.getElementById("notification-list");
+  var emptyEl = document.getElementById("notification-empty");
+  var clearBtn = document.getElementById("btn-clear-notifications");
+  if (!listEl || !emptyEl) return;
+  var previousListScrollTop = listEl.scrollTop;
+  var previousDocScrollTop = (_ref3 = (_document$documentEle = (_document$documentEle2 = document.documentElement) === null || _document$documentEle2 === void 0 ? void 0 : _document$documentEle2.scrollTop) !== null && _document$documentEle !== void 0 ? _document$documentEle : (_document$body = document.body) === null || _document$body === void 0 ? void 0 : _document$body.scrollTop) !== null && _ref3 !== void 0 ? _ref3 : 0;
+  var allItems = (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.readTaskpaneNotifications)();
+  var visibleItems = allItems.slice(-MAX_VISIBLE_NOTIFICATIONS).reverse();
+  var signature = buildNotificationSignature(visibleItems);
+  if (!force && signature === lastNotificationSignature) return;
+  lastNotificationSignature = signature;
+  listEl.innerHTML = "";
+  if (!visibleItems.length) {
+    emptyEl.hidden = false;
+    if (clearBtn) clearBtn.disabled = true;
+    return;
+  }
+  emptyEl.hidden = true;
+  if (clearBtn) clearBtn.disabled = false;
+  var _iterator = _createForOfIteratorHelper(visibleItems),
+    _step;
+  try {
+    for (_iterator.s(); !(_step = _iterator.n()).done;) {
+      var item = _step.value;
+      var li = document.createElement("li");
+      var level = typeof (item === null || item === void 0 ? void 0 : item.level) === "string" ? item.level.toLowerCase() : "info";
+      var normalizedLevel = level === "error" || level === "warn" ? level : "info";
+      li.className = "notification-item notification-item-".concat(normalizedLevel);
+      var when = Number.isFinite(item === null || item === void 0 ? void 0 : item.timestamp) ? new Date(item.timestamp).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit"
+      }) : "";
+      var source = typeof (item === null || item === void 0 ? void 0 : item.source) === "string" ? item.source : "system";
+      li.textContent = "".concat((item === null || item === void 0 ? void 0 : item.message) || "");
+      li.title = [when, source].filter(Boolean).join(" | ");
+      listEl.appendChild(li);
+    }
+  } catch (err) {
+    _iterator.e(err);
+  } finally {
+    _iterator.f();
+  }
+  listEl.scrollTop = previousListScrollTop;
+  if (document.documentElement) {
+    document.documentElement.scrollTop = previousDocScrollTop;
+  }
+  if (document.body) {
+    document.body.scrollTop = previousDocScrollTop;
+  }
+};
+var syncActionButtons = function syncActionButtons() {
+  var checkBtn = document.getElementById("btn-check");
+  var clearHighlightsBtn = document.getElementById("btn-clear-highlights");
+  var acceptOneBtn = document.getElementById("btn-accept-one");
+  var rejectOneBtn = document.getElementById("btn-reject-one");
+  var acceptBtn = document.getElementById("btn-accept");
+  var rejectBtn = document.getElementById("btn-reject");
+  var checkInProgress = (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)();
+  var checkActive = Boolean(checkRunInFlight || checkInProgress);
+  var reviewActionsEnabled = canUseOnlineReviewActions();
+  var pendingCount = online ? (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.getPendingSuggestionsOnline)().length : 0;
+  var hasPending = pendingCount > 0;
+  syncStatusLoadingIndicator();
+  if (checkBtn) {
+    checkBtn.disabled = busy && !checkActive;
+    checkBtn.textContent = checkActive ? "Ustavi preverjanje" : "Preveri vejice";
+  }
+  if (clearHighlightsBtn) clearHighlightsBtn.disabled = busy || !online || checkInProgress || !hasPending;
+  if (acceptOneBtn) acceptOneBtn.disabled = busy || !reviewActionsEnabled || checkInProgress || !hasPending;
+  if (rejectOneBtn) rejectOneBtn.disabled = busy || !reviewActionsEnabled || checkInProgress || !hasPending;
+  if (acceptBtn) acceptBtn.disabled = busy || !reviewActionsEnabled || checkInProgress || !hasPending;
+  if (rejectBtn) rejectBtn.disabled = busy || !reviewActionsEnabled || checkInProgress || !hasPending;
+};
+var setBusy = function setBusy(nextBusy) {
+  busy = Boolean(nextBusy);
+  scheduleUiRefresh({
+    immediate: true
+  });
+};
+var clampCurrentSuggestionIndex = function clampCurrentSuggestionIndex(total) {
+  if (!Number.isFinite(total) || total <= 0) {
+    currentSuggestionIndex = 0;
+    return;
+  }
+  if (currentSuggestionIndex < 0) {
+    currentSuggestionIndex = 0;
+    return;
+  }
+  if (currentSuggestionIndex >= total) {
+    currentSuggestionIndex = total - 1;
+  }
+};
+var refreshPendingStatus = function refreshPendingStatus() {
+  if (!online) return;
+  var pending = (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.getPendingSuggestionsOnline)();
+  var highlightedCount = Number((0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.getOnlineHighlightedSuggestionCount)() || 0);
+  clampCurrentSuggestionIndex(pending.length);
+  if (highlightedCount <= 0) {
+    setStatus("");
+    return;
+  }
+  setStatus("Kon\u010Dano. Popravki: ".concat(highlightedCount, "."));
+};
+var refreshDesktopProgressStatus = function refreshDesktopProgressStatus() {
+  var _progress$paragraphTo, _progress$paragraphEn;
+  if (online) return;
+  if (!busy && !checkRunInFlight && !(0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)()) return;
+  var runtimeState = readRuntimeStateSnapshot();
+  var progress = runtimeState === null || runtimeState === void 0 ? void 0 : runtimeState.desktopProgress;
+  if (!progress || _typeof(progress) !== "object") return;
+  var total = Number((_progress$paragraphTo = progress.paragraphTotal) !== null && _progress$paragraphTo !== void 0 ? _progress$paragraphTo : 0);
+  if (!Number.isFinite(total) || total <= 0) return;
+  var end = Number((_progress$paragraphEn = progress.paragraphEnd) !== null && _progress$paragraphEn !== void 0 ? _progress$paragraphEn : 0);
+  var safeEnd = Number.isFinite(end) ? Math.max(0, Math.min(Math.floor(end), Math.floor(total))) : 0;
+  setStatus("Preverjam dokument ... (".concat(safeEnd, "/").concat(Math.floor(total), ")"));
+};
+var flushUiRefresh = function flushUiRefresh() {
+  var _ref4 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+    _ref4$forceNotificati = _ref4.forceNotifications,
+    forceNotifications = _ref4$forceNotificati === void 0 ? false : _ref4$forceNotificati,
+    _ref4$includePendingS = _ref4.includePendingStatus,
+    includePendingStatus = _ref4$includePendingS === void 0 ? false : _ref4$includePendingS;
+  syncActionButtons();
+  refreshDesktopProgressStatus();
+  renderNotifications({
+    force: forceNotifications
+  });
+  if (includePendingStatus && !busy && !checkRunInFlight && !(0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)()) {
+    refreshPendingStatus();
+  }
+};
+var scheduleUiRefresh = function scheduleUiRefresh() {
+  var _ref5 = arguments.length > 0 && arguments[0] !== undefined ? arguments[0] : {},
+    _ref5$forceNotificati = _ref5.forceNotifications,
+    forceNotifications = _ref5$forceNotificati === void 0 ? false : _ref5$forceNotificati,
+    _ref5$includePendingS = _ref5.includePendingStatus,
+    includePendingStatus = _ref5$includePendingS === void 0 ? false : _ref5$includePendingS,
+    _ref5$immediate = _ref5.immediate,
+    immediate = _ref5$immediate === void 0 ? false : _ref5$immediate;
+  if (immediate) {
+    if (uiRefreshTimerId) {
+      clearTimeout(uiRefreshTimerId);
+      uiRefreshTimerId = null;
+    }
+    pendingUiRefresh = {
+      forceNotifications: false,
+      includePendingStatus: false
+    };
+    flushUiRefresh({
+      forceNotifications: forceNotifications,
+      includePendingStatus: includePendingStatus
+    });
+    return;
+  }
+  pendingUiRefresh.forceNotifications = pendingUiRefresh.forceNotifications || forceNotifications;
+  pendingUiRefresh.includePendingStatus = pendingUiRefresh.includePendingStatus || includePendingStatus;
+  if (uiRefreshTimerId) return;
+  uiRefreshTimerId = setTimeout(function () {
+    var refreshPayload = pendingUiRefresh;
+    pendingUiRefresh = {
+      forceNotifications: false,
+      includePendingStatus: false
+    };
+    uiRefreshTimerId = null;
+    flushUiRefresh(refreshPayload);
+  }, UI_REFRESH_DEBOUNCE_MS);
+};
+var runCheck = /*#__PURE__*/function () {
+  var _ref6 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee2() {
+    var checkInProgress, checkActive, now, offlineMessage, _summary6, _summary7, _summary8, summary, onlineAggregate, accumulateOnlineSummary, partialPasses, lastPartialProgressKey, repeatedPartialProgressCount, _summary, _summary$paragraphSta, _summary2, _summary$paragraphEnd, _summary3, _summary$paragraphTot, _summary4, _summary5, start, end, total, progressKey, reachedRepeatedProgressGuard, reachedPassCountGuard, _summary$inserted, _summary9, _summary$deleted, _summary0, _summary$detected, _summary1, _summary$apiErrors, _summary10, _summary$nonCommaSkip, _summary11, inserted, deleted, detected, apiErrors, nonCommaSkips, totalFixed, timedOut, _offlineMessage, _t;
+    return _regenerator().w(function (_context2) {
+      while (1) switch (_context2.p = _context2.n) {
+        case 0:
+          checkInProgress = (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)();
+          checkActive = Boolean(checkRunInFlight || checkInProgress);
+          if (!checkActive) {
+            _context2.n = 1;
+            break;
+          }
+          checkStopRequested = true;
+          try {
+            (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.cancelDocumentCheck)("ui-stop-button");
+            setStatus("Ustavljam preverjanje ...");
+          } catch (_err) {
+            setStatus("Ustavljanje ni uspelo. Poskusite znova.");
+          }
+          scheduleUiRefresh({
+            immediate: true
+          });
+          return _context2.a(2);
+        case 1:
+          if (!busy) {
+            _context2.n = 2;
+            break;
+          }
+          setStatus("Počakajte, da se trenutno opravilo zaključi.");
+          return _context2.a(2);
+        case 2:
+          now = Date.now();
+          if (!(now - lastCheckClickAt < CHECK_CLICK_DEBOUNCE_MS)) {
+            _context2.n = 3;
+            break;
+          }
+          return _context2.a(2);
+        case 3:
+          lastCheckClickAt = now;
+          checkStopRequested = false;
+          checkRunInFlight = true;
+          setBusy(true);
+          (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.clearTaskpaneNotifications)();
+          scheduleUiRefresh({
+            forceNotifications: true,
+            immediate: true
+          });
+          if (!isOffline()) {
+            _context2.n = 4;
+            break;
+          }
+          offlineMessage = "".concat(CHECK_GENERIC_ERROR_MESSAGE, " ").concat(CHECK_OFFLINE_HINT_MESSAGE);
+          setStatus(offlineMessage);
+          (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.publishTaskpaneNotifications)([offlineMessage], {
+            source: "taskpane",
+            level: "warn"
+          });
+          checkRunInFlight = false;
+          setBusy(false);
+          return _context2.a(2);
+        case 4:
+          setStatus("Preverjam dokument ...");
+          log("runCheck:start", {
+            online: online,
+            busy: busy,
+            checkRunInFlight: checkRunInFlight,
+            checkInProgress: (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)()
+          });
+          _context2.p = 5;
+          summary = null;
+          onlineAggregate = {
+            passes: 0,
+            paragraphsProcessed: 0,
+            detected: 0,
+            highlighted: 0,
+            apiErrors: 0,
+            nonCommaSkips: 0
+          };
+          accumulateOnlineSummary = function accumulateOnlineSummary(value) {
+            if (!online || !value || _typeof(value) !== "object") return;
+            if (value.mode !== "online") return;
+            onlineAggregate.passes += 1;
+            onlineAggregate.paragraphsProcessed += Number.isFinite(value.paragraphsProcessed) ? Number(value.paragraphsProcessed) : 0;
+            onlineAggregate.detected += Number.isFinite(value.detected) ? Number(value.detected) : 0;
+            onlineAggregate.highlighted += Number.isFinite(value.highlighted) ? Number(value.highlighted) : 0;
+            onlineAggregate.apiErrors += Number.isFinite(value.apiErrors) ? Number(value.apiErrors) : 0;
+            onlineAggregate.nonCommaSkips += Number.isFinite(value.nonCommaSkips) ? Number(value.nonCommaSkips) : 0;
+          };
+          partialPasses = 0;
+          lastPartialProgressKey = "";
+          repeatedPartialProgressCount = 0;
+        case 6:
+          if (false) // removed by dead control flow
+{}
+          _context2.n = 7;
+          return withCheckWatchdog(function () {
+            return (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.checkDocumentText)();
+          });
+        case 7:
+          summary = _context2.v;
+          log("runCheck:summary", summary);
+          accumulateOnlineSummary(summary);
+          if (!(((_summary = summary) === null || _summary === void 0 ? void 0 : _summary.status) !== "partial")) {
+            _context2.n = 8;
+            break;
+          }
+          return _context2.a(3, 10);
+        case 8:
+          partialPasses += 1;
+          start = Number((_summary$paragraphSta = (_summary2 = summary) === null || _summary2 === void 0 ? void 0 : _summary2.paragraphStart) !== null && _summary$paragraphSta !== void 0 ? _summary$paragraphSta : 0);
+          end = Number((_summary$paragraphEnd = (_summary3 = summary) === null || _summary3 === void 0 ? void 0 : _summary3.paragraphEnd) !== null && _summary$paragraphEnd !== void 0 ? _summary$paragraphEnd : 0);
+          total = Number((_summary$paragraphTot = (_summary4 = summary) === null || _summary4 === void 0 ? void 0 : _summary4.paragraphTotal) !== null && _summary$paragraphTot !== void 0 ? _summary$paragraphTot : 0);
+          if (total > 0) {
+            setStatus("Preverjam dokument ... (".concat(Math.max(0, Math.min(end, total)), "/").concat(total, ")"));
+          }
+          progressKey = "".concat(((_summary5 = summary) === null || _summary5 === void 0 ? void 0 : _summary5.mode) || "na", ":").concat(start, ":").concat(end, ":").concat(total);
+          if (progressKey === lastPartialProgressKey) {
+            repeatedPartialProgressCount += 1;
+          } else {
+            repeatedPartialProgressCount = 0;
+          }
+          reachedRepeatedProgressGuard = repeatedPartialProgressCount >= CHECK_MAX_REPEATED_PROGRESS;
+          reachedPassCountGuard = partialPasses >= CHECK_MAX_PARTIAL_PASSES;
+          if (!(reachedRepeatedProgressGuard || reachedPassCountGuard)) {
+            _context2.n = 9;
+            break;
+          }
+          log("runCheck:partial-guard-stop", {
+            reachedRepeatedProgressGuard: reachedRepeatedProgressGuard,
+            reachedPassCountGuard: reachedPassCountGuard,
+            repeatedPartialProgressCount: repeatedPartialProgressCount,
+            partialPasses: partialPasses,
+            maxRepeatedProgress: CHECK_MAX_REPEATED_PROGRESS,
+            maxPartialPasses: CHECK_MAX_PARTIAL_PASSES,
+            progressKey: progressKey
+          });
+          return _context2.a(3, 10);
+        case 9:
+          lastPartialProgressKey = progressKey;
+          _context2.n = 6;
+          break;
+        case 10:
+          if (((_summary6 = summary) === null || _summary6 === void 0 ? void 0 : _summary6.status) === "deferred") {
+            setStatus("Po\u010Dakajte, da se trenutno opravilo zaklju\u010Di.");
+          } else if (online) {
+            if (onlineAggregate.passes > 0) {
+              log("runCheck:online-aggregate", onlineAggregate);
+              if (onlineAggregate.highlighted === 0 && onlineAggregate.detected === 0 && onlineAggregate.apiErrors === 0 && onlineAggregate.nonCommaSkips === 0) {
+                setStatus("Kon\u010Dano. Ni bilo najdenih manjkajo\u010Dih ali napa\u010Dnih vejic.");
+              } else {
+                setStatus("Kon\u010Dano. Popravki: ".concat(onlineAggregate.highlighted, "."));
+              }
+            } else {
+              refreshPendingStatus();
+            }
+          } else if (((_summary7 = summary) === null || _summary7 === void 0 ? void 0 : _summary7.status) === "blocked") {
+            setStatus("Preverjanje ustavljeno. Poglejte obvestila.");
+          } else if (checkStopRequested) {
+            setStatus("Preverjanje ustavljeno.");
+          } else if (((_summary8 = summary) === null || _summary8 === void 0 ? void 0 : _summary8.status) === "error") {
+            setStatus("Napaka pri preverjanju.");
+          } else {
+            inserted = Number((_summary$inserted = (_summary9 = summary) === null || _summary9 === void 0 ? void 0 : _summary9.inserted) !== null && _summary$inserted !== void 0 ? _summary$inserted : 0);
+            deleted = Number((_summary$deleted = (_summary0 = summary) === null || _summary0 === void 0 ? void 0 : _summary0.deleted) !== null && _summary$deleted !== void 0 ? _summary$deleted : 0);
+            detected = Number((_summary$detected = (_summary1 = summary) === null || _summary1 === void 0 ? void 0 : _summary1.detected) !== null && _summary$detected !== void 0 ? _summary$detected : 0);
+            apiErrors = Number((_summary$apiErrors = (_summary10 = summary) === null || _summary10 === void 0 ? void 0 : _summary10.apiErrors) !== null && _summary$apiErrors !== void 0 ? _summary$apiErrors : 0);
+            nonCommaSkips = Number((_summary$nonCommaSkip = (_summary11 = summary) === null || _summary11 === void 0 ? void 0 : _summary11.nonCommaSkips) !== null && _summary$nonCommaSkip !== void 0 ? _summary$nonCommaSkip : 0);
+            totalFixed = inserted + deleted;
+            if (totalFixed === 0 && detected === 0 && apiErrors === 0 && nonCommaSkips === 0) {
+              setStatus("Kon\u010Dano. Ni bilo najdenih manjkajo\u010Dih ali napa\u010Dnih vejic.");
+            } else if (totalFixed > 0) {
+              setStatus("Kon\u010Dano. Popravki: ".concat(totalFixed, "."));
+            } else {
+              setStatus("Kon\u010Dano.");
+            }
+          }
+          _context2.n = 12;
+          break;
+        case 11:
+          _context2.p = 11;
+          _t = _context2.v;
+          errL("check failed", _t);
+          timedOut = String((_t === null || _t === void 0 ? void 0 : _t.code) || (_t === null || _t === void 0 ? void 0 : _t.message) || "").includes("CHECK_WATCHDOG_TIMEOUT");
+          if (timedOut) {
+            try {
+              (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.cancelDocumentCheck)("ui-watchdog-timeout");
+            } catch (_cancelErr) {
+              // ignore cancellation failures
+            }
+            try {
+              (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.forceResetDocumentCheckState)("ui-watchdog-timeout");
+            } catch (_resetErr) {
+              // ignore forced reset failures
+            }
+          }
+          if (isOffline()) {
+            _offlineMessage = "".concat(CHECK_GENERIC_ERROR_MESSAGE, " ").concat(CHECK_OFFLINE_HINT_MESSAGE);
+            setStatus(_offlineMessage);
+            (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.publishTaskpaneNotifications)([_offlineMessage], {
+              source: "taskpane",
+              level: "warn"
+            });
+          } else {
+            setStatus(CHECK_GENERIC_ERROR_MESSAGE);
+            (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.publishTaskpaneNotifications)([CHECK_GENERIC_ERROR_MESSAGE], {
+              source: "taskpane",
+              level: "error"
+            });
+          }
+        case 12:
+          _context2.p = 12;
+          log("runCheck:finally", {
+            online: online,
+            busy: busy,
+            checkRunInFlight: checkRunInFlight,
+            checkInProgress: (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)()
+          });
+          checkRunInFlight = false;
+          setBusy(false);
+          return _context2.f(12);
+        case 13:
+          return _context2.a(2);
+      }
+    }, _callee2, null, [[5, 11, 12, 13]]);
+  }));
+  return function runCheck() {
+    return _ref6.apply(this, arguments);
+  };
+}();
+var runClearHighlights = /*#__PURE__*/function () {
+  var _ref7 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee3() {
+    var _summary$clearedMarke, _summary$failedClear, summary, cleared, failedClear, _t2;
+    return _regenerator().w(function (_context3) {
+      while (1) switch (_context3.p = _context3.n) {
+        case 0:
+          if (online) {
+            _context3.n = 1;
+            break;
+          }
+          return _context3.a(2);
+        case 1:
+          if (!(busy || (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)())) {
+            _context3.n = 2;
+            break;
+          }
+          setStatus("Po\u010Dakajte, da se preverjanje kon\u010Da.");
+          return _context3.a(2);
+        case 2:
+          setBusy(true);
+          setStatus("Bri\u0161em ozna\u010Dbe ...");
+          _context3.p = 3;
+          _context3.n = 4;
+          return (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.clearPendingSuggestionHighlightsOnline)();
+        case 4:
+          summary = _context3.v;
+          cleared = Number((_summary$clearedMarke = summary === null || summary === void 0 ? void 0 : summary.clearedMarkers) !== null && _summary$clearedMarke !== void 0 ? _summary$clearedMarke : 0);
+          failedClear = Number((_summary$failedClear = summary === null || summary === void 0 ? void 0 : summary.failedClear) !== null && _summary$failedClear !== void 0 ? _summary$failedClear : 0);
+          if ((summary === null || summary === void 0 ? void 0 : summary.status) === "deferred") {
+            setStatus("Po\u010Dakajte, da se trenutno opravilo zaklju\u010Di.");
+          } else if (cleared > 0) {
+            setStatus("Ozna\u010Dbe so bile pobrisane.");
+            if (failedClear > 0) {
+              (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.publishTaskpaneNotifications)(["Nekaterih ozna\u010Db ni bilo mogo\u010De pobrisati."], {
+                source: "taskpane",
+                level: "warn"
+              });
+            }
+          } else {
+            setStatus("Ni ozna\u010Db za pobrisati.");
+            (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.publishTaskpaneNotifications)(["Namig: Znova za\u017Eenite preverjanje in nato pobri\u0161ite ozna\u010Dbe."], {
+              source: "taskpane",
+              level: "info"
+            });
+          }
+          log("clear highlights summary", summary);
+          _context3.n = 6;
+          break;
+        case 5:
+          _context3.p = 5;
+          _t2 = _context3.v;
+          errL("clear highlights failed", _t2);
+          setStatus("Napaka pri brisanju ozna\u010Db.");
+        case 6:
+          _context3.p = 6;
+          setBusy(false);
+          return _context3.f(6);
+        case 7:
+          return _context3.a(2);
+      }
+    }, _callee3, null, [[3, 5, 6, 7]]);
+  }));
+  return function runClearHighlights() {
+    return _ref7.apply(this, arguments);
+  };
+}();
+var runAccept = /*#__PURE__*/function () {
+  var _ref8 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee4() {
+    var _summary$appliedSugge, _summary$pendingAfter, summary, applied, pending, _t3;
+    return _regenerator().w(function (_context4) {
+      while (1) switch (_context4.p = _context4.n) {
+        case 0:
+          if (canUseOnlineReviewActions()) {
+            _context4.n = 1;
+            break;
+          }
+          return _context4.a(2);
+        case 1:
+          if (!(busy || (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)())) {
+            _context4.n = 2;
+            break;
+          }
+          setStatus("Po\u010Dakajte, da se preverjanje kon\u010Da.");
+          return _context4.a(2);
+        case 2:
+          setBusy(true);
+          setStatus("Sprejemam vse predloge ...");
+          _context4.p = 3;
+          _context4.n = 4;
+          return (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.applyAllSuggestionsOnline)();
+        case 4:
+          summary = _context4.v;
+          applied = Number((_summary$appliedSugge = summary === null || summary === void 0 ? void 0 : summary.appliedSuggestions) !== null && _summary$appliedSugge !== void 0 ? _summary$appliedSugge : 0);
+          pending = Number((_summary$pendingAfter = summary === null || summary === void 0 ? void 0 : summary.pendingAfter) !== null && _summary$pendingAfter !== void 0 ? _summary$pendingAfter : 0);
+          setStatus("Sprejeto: ".concat(applied, ". Preostalo: ").concat(pending, "."));
+          log("accept summary", summary);
+          _context4.n = 6;
+          break;
+        case 5:
+          _context4.p = 5;
+          _t3 = _context4.v;
+          errL("accept failed", _t3);
+          setStatus("Napaka pri sprejemanju.");
+        case 6:
+          _context4.p = 6;
+          setBusy(false);
+          return _context4.f(6);
+        case 7:
+          return _context4.a(2);
+      }
+    }, _callee4, null, [[3, 5, 6, 7]]);
+  }));
+  return function runAccept() {
+    return _ref8.apply(this, arguments);
+  };
+}();
+var runReject = /*#__PURE__*/function () {
+  var _ref9 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee5() {
+    var _summary$clearedMarke2, _summary$revertedAppl, _summary$pendingAfter2, summary, rejected, reverted, pending, _t4;
+    return _regenerator().w(function (_context5) {
+      while (1) switch (_context5.p = _context5.n) {
+        case 0:
+          if (canUseOnlineReviewActions()) {
+            _context5.n = 1;
+            break;
+          }
+          return _context5.a(2);
+        case 1:
+          if (!(busy || (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)())) {
+            _context5.n = 2;
+            break;
+          }
+          setStatus("Po\u010Dakajte, da se preverjanje kon\u010Da.");
+          return _context5.a(2);
+        case 2:
+          setBusy(true);
+          setStatus("Zavra\u010Dam vse predloge ...");
+          _context5.p = 3;
+          _context5.n = 4;
+          return (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.rejectAllSuggestionsOnline)();
+        case 4:
+          summary = _context5.v;
+          rejected = Number((_summary$clearedMarke2 = summary === null || summary === void 0 ? void 0 : summary.clearedMarkers) !== null && _summary$clearedMarke2 !== void 0 ? _summary$clearedMarke2 : 0);
+          reverted = Number((_summary$revertedAppl = summary === null || summary === void 0 ? void 0 : summary.revertedAppliedSuggestions) !== null && _summary$revertedAppl !== void 0 ? _summary$revertedAppl : 0);
+          pending = Number((_summary$pendingAfter2 = summary === null || summary === void 0 ? void 0 : summary.pendingAfter) !== null && _summary$pendingAfter2 !== void 0 ? _summary$pendingAfter2 : 0);
+          if (reverted > 0) {
+            setStatus("Zavrnjeno: ".concat(rejected, ". Razveljavljeno: ").concat(reverted, ". Preostalo: ").concat(pending, "."));
+          } else {
+            setStatus("Zavrnjeno: ".concat(rejected, ". Preostalo: ").concat(pending, "."));
+          }
+          log("reject summary", summary);
+          _context5.n = 6;
+          break;
+        case 5:
+          _context5.p = 5;
+          _t4 = _context5.v;
+          errL("reject failed", _t4);
+          setStatus("Napaka pri zavracanju.");
+        case 6:
+          _context5.p = 6;
+          setBusy(false);
+          return _context5.f(6);
+        case 7:
+          return _context5.a(2);
+      }
+    }, _callee5, null, [[3, 5, 6, 7]]);
+  }));
+  return function runReject() {
+    return _ref9.apply(this, arguments);
+  };
+}();
+var runAcceptOne = /*#__PURE__*/function () {
+  var _ref0 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee6() {
+    var pendingList, current, _summary$pendingAfter3, _summary$appliedSugge2, summary, pendingAfter, accepted, _t5;
+    return _regenerator().w(function (_context6) {
+      while (1) switch (_context6.p = _context6.n) {
+        case 0:
+          if (canUseOnlineReviewActions()) {
+            _context6.n = 1;
+            break;
+          }
+          return _context6.a(2);
+        case 1:
+          if (!(busy || (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)())) {
+            _context6.n = 2;
+            break;
+          }
+          setStatus("Pocakajte, da se preverjanje konca.");
+          return _context6.a(2);
+        case 2:
+          pendingList = (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.getPendingSuggestionsOnline)();
+          if (pendingList.length) {
+            _context6.n = 3;
+            break;
+          }
+          setStatus("Ni predlogov za sprejem.");
+          return _context6.a(2);
+        case 3:
+          clampCurrentSuggestionIndex(pendingList.length);
+          current = pendingList[currentSuggestionIndex];
+          if (current) {
+            _context6.n = 4;
+            break;
+          }
+          setStatus("Predlog ni vec na voljo.");
+          return _context6.a(2);
+        case 4:
+          setBusy(true);
+          setStatus("Sprejemam trenutni predlog ...");
+          _context6.p = 5;
+          _context6.n = 6;
+          return (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.applySuggestionOnlineById)(current.id);
+        case 6:
+          summary = _context6.v;
+          pendingAfter = Number((_summary$pendingAfter3 = summary === null || summary === void 0 ? void 0 : summary.pendingAfter) !== null && _summary$pendingAfter3 !== void 0 ? _summary$pendingAfter3 : 0);
+          accepted = Number((_summary$appliedSugge2 = summary === null || summary === void 0 ? void 0 : summary.appliedSuggestions) !== null && _summary$appliedSugge2 !== void 0 ? _summary$appliedSugge2 : 0);
+          clampCurrentSuggestionIndex(pendingAfter);
+          if ((summary === null || summary === void 0 ? void 0 : summary.status) === "applied" || (summary === null || summary === void 0 ? void 0 : summary.status) === "partial") {
+            if ((summary === null || summary === void 0 ? void 0 : summary.reason) === "suggestion-skipped-unresolvable") {
+              setStatus("Predloga ni bilo mogoce sprejeti, zato je bil preskocen. Preostalo: ".concat(pendingAfter, "."));
+            } else {
+              setStatus("Sprejeto: ".concat(accepted > 0 ? accepted : 1, ". Preostalo: ").concat(pendingAfter, "."));
+            }
+          } else if ((summary === null || summary === void 0 ? void 0 : summary.reason) === "already-applied") {
+            setStatus("Predlog je bil \u017Ee upo\u0161tevan. Preostalo: ".concat(pendingAfter, "."));
+          } else if ((summary === null || summary === void 0 ? void 0 : summary.reason) === "suggestion-skipped-unresolvable") {
+            setStatus("Predloga ni bilo mogoce sprejeti, zato je bil preskocen. Preostalo: ".concat(pendingAfter, "."));
+          } else {
+            setStatus("Predloga ni bilo mogoce sprejeti.");
+          }
+          log("accept one summary", summary);
+          _context6.n = 8;
+          break;
+        case 7:
+          _context6.p = 7;
+          _t5 = _context6.v;
+          errL("accept one failed", _t5);
+          setStatus("Napaka pri sprejemanju predloga.");
+        case 8:
+          _context6.p = 8;
+          setBusy(false);
+          return _context6.f(8);
+        case 9:
+          return _context6.a(2);
+      }
+    }, _callee6, null, [[5, 7, 8, 9]]);
+  }));
+  return function runAcceptOne() {
+    return _ref0.apply(this, arguments);
+  };
+}();
+var runRejectOne = /*#__PURE__*/function () {
+  var _ref1 = _asyncToGenerator(/*#__PURE__*/_regenerator().m(function _callee7() {
+    var pendingList, current, _summary$pendingAfter4, _summary$rejectedSugg, _summary$revertedAppl2, summary, pendingAfter, rejected, reverted, _t6;
+    return _regenerator().w(function (_context7) {
+      while (1) switch (_context7.p = _context7.n) {
+        case 0:
+          if (canUseOnlineReviewActions()) {
+            _context7.n = 1;
+            break;
+          }
+          return _context7.a(2);
+        case 1:
+          if (!(busy || (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.isDocumentCheckInProgress)())) {
+            _context7.n = 2;
+            break;
+          }
+          setStatus("Pocakajte, da se preverjanje konca.");
+          return _context7.a(2);
+        case 2:
+          pendingList = (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.getPendingSuggestionsOnline)();
+          if (pendingList.length) {
+            _context7.n = 3;
+            break;
+          }
+          setStatus("Ni predlogov za zavrnitev.");
+          return _context7.a(2);
+        case 3:
+          clampCurrentSuggestionIndex(pendingList.length);
+          current = pendingList[currentSuggestionIndex];
+          if (current) {
+            _context7.n = 4;
+            break;
+          }
+          setStatus("Predlog ni vec na voljo.");
+          return _context7.a(2);
+        case 4:
+          setBusy(true);
+          setStatus("Zavracam trenutni predlog ...");
+          _context7.p = 5;
+          _context7.n = 6;
+          return (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.rejectSuggestionOnlineById)(current.id);
+        case 6:
+          summary = _context7.v;
+          pendingAfter = Number((_summary$pendingAfter4 = summary === null || summary === void 0 ? void 0 : summary.pendingAfter) !== null && _summary$pendingAfter4 !== void 0 ? _summary$pendingAfter4 : 0);
+          rejected = Number((_summary$rejectedSugg = summary === null || summary === void 0 ? void 0 : summary.rejectedSuggestions) !== null && _summary$rejectedSugg !== void 0 ? _summary$rejectedSugg : 0);
+          reverted = Number((_summary$revertedAppl2 = summary === null || summary === void 0 ? void 0 : summary.revertedAppliedSuggestions) !== null && _summary$revertedAppl2 !== void 0 ? _summary$revertedAppl2 : 0);
+          clampCurrentSuggestionIndex(pendingAfter);
+          if ((summary === null || summary === void 0 ? void 0 : summary.status) === "rejected" || (summary === null || summary === void 0 ? void 0 : summary.status) === "partial") {
+            if (reverted > 0) {
+              setStatus("Zavrnjeno: ".concat(rejected > 0 ? rejected : 1, ". Razveljavljeno: ").concat(reverted, ". Preostalo: ").concat(pendingAfter, "."));
+            } else {
+              setStatus("Zavrnjeno: ".concat(rejected > 0 ? rejected : 1, ". Preostalo: ").concat(pendingAfter, "."));
+            }
+          } else {
+            setStatus("Predloga ni bilo mogoce zavrniti.");
+          }
+          log("reject one summary", summary);
+          _context7.n = 8;
+          break;
+        case 7:
+          _context7.p = 7;
+          _t6 = _context7.v;
+          errL("reject one failed", _t6);
+          setStatus("Napaka pri zavracanju predloga.");
+        case 8:
+          _context7.p = 8;
+          setBusy(false);
+          return _context7.f(8);
+        case 9:
+          return _context7.a(2);
+      }
+    }, _callee7, null, [[5, 7, 8, 9]]);
+  }));
+  return function runRejectOne() {
+    return _ref1.apply(this, arguments);
+  };
+}();
+Office.onReady(function (info) {
+  var _Office;
+  if (info.host !== Office.HostType.Word) return;
+  var sideload = document.getElementById("sideload-msg");
+  var appBody = document.getElementById("app-body");
+  if (sideload) sideload.style.display = "none";
+  if (appBody) appBody.style.display = "flex";
+  var mode = resolveManifestMode();
+  online = mode ? mode === "web" : (0,_utils_host_js__WEBPACK_IMPORTED_MODULE_1__.isWordOnline)();
+  log("taskpane:ready", {
+    host: info.host,
+    platform: (_Office = Office) === null || _Office === void 0 || (_Office = _Office.context) === null || _Office === void 0 ? void 0 : _Office.platform,
+    mode: mode,
+    online: online,
+    href: typeof window !== "undefined" ? window.location.href : ""
+  });
+  // Notifications are persisted in localStorage and can leak across documents.
+  // Start each taskpane session clean to avoid showing stale messages in new docs.
+  (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.clearTaskpaneNotifications)();
+  lastNotificationSignature = "";
+  if (online) {
+    var restored = (0,_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.restorePendingSuggestionsOnlineIfNeeded)();
+    if (restored > 0) {
+      log("Restored pending suggestions after taskpane load:", restored);
+    }
+  }
+  var acceptBtn = document.getElementById("btn-accept");
+  var rejectBtn = document.getElementById("btn-reject");
+  var clearHighlightsBtn = document.getElementById("btn-clear-highlights");
+  var acceptOneBtn = document.getElementById("btn-accept-one");
+  var rejectOneBtn = document.getElementById("btn-reject-one");
+  var secondaryActions = document.getElementById("secondary-actions");
+  var taskpaneSubtitle = document.getElementById("taskpane-subtitle");
+  var showOnlineReviewActions = canUseOnlineReviewActions();
+  if (taskpaneSubtitle) {
+    taskpaneSubtitle.textContent = online ? TASKPANE_SUBTITLE_WEB : TASKPANE_SUBTITLE_DESKTOP;
+  }
+  if (!showOnlineReviewActions) {
+    if (secondaryActions) secondaryActions.hidden = true;
+    if (acceptOneBtn) acceptOneBtn.hidden = true;
+    if (rejectOneBtn) rejectOneBtn.hidden = true;
+    if (acceptBtn) acceptBtn.hidden = true;
+    if (rejectBtn) rejectBtn.hidden = true;
+  }
+  if (!online) {
+    if (clearHighlightsBtn) clearHighlightsBtn.hidden = true;
+  }
+  var checkBtn = document.getElementById("btn-check");
+  var clearHighlightsActionBtn = document.getElementById("btn-clear-highlights");
+  var clearNotificationsBtn = document.getElementById("btn-clear-notifications");
+  if (checkBtn) checkBtn.addEventListener("click", function () {
+    return void runCheck();
+  });
+  if (clearHighlightsActionBtn) clearHighlightsActionBtn.addEventListener("click", function () {
+    return void runClearHighlights();
+  });
+  if (showOnlineReviewActions && acceptOneBtn) acceptOneBtn.addEventListener("click", function () {
+    return void runAcceptOne();
+  });
+  if (showOnlineReviewActions && rejectOneBtn) rejectOneBtn.addEventListener("click", function () {
+    return void runRejectOne();
+  });
+  if (showOnlineReviewActions && acceptBtn) acceptBtn.addEventListener("click", function () {
+    return void runAccept();
+  });
+  if (showOnlineReviewActions && rejectBtn) rejectBtn.addEventListener("click", function () {
+    return void runReject();
+  });
+  if (clearNotificationsBtn) {
+    clearNotificationsBtn.addEventListener("click", function () {
+      (0,_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.clearTaskpaneNotifications)();
+      scheduleUiRefresh({
+        forceNotifications: true,
+        immediate: true
+      });
+    });
+  }
+  if (typeof window !== "undefined") {
+    window.addEventListener("storage", function (evt) {
+      if (!evt) return;
+      if (evt.key === _utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.TASKPANE_NOTIFICATION_STORAGE_KEY) {
+        scheduleUiRefresh({
+          forceNotifications: true
+        });
+        return;
+      }
+      if (evt.key === _logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.RUNTIME_STATE_STORAGE_KEY) {
+        scheduleUiRefresh({
+          includePendingStatus: true
+        });
+      }
+    });
+    window.addEventListener(_utils_notifications_js__WEBPACK_IMPORTED_MODULE_2__.TASKPANE_NOTIFICATION_EVENT_NAME, function () {
+      scheduleUiRefresh({
+        forceNotifications: true
+      });
+    });
+    window.addEventListener(_logic_preveriVejice_js__WEBPACK_IMPORTED_MODULE_0__.RUNTIME_STATE_EVENT_NAME, function () {
+      scheduleUiRefresh();
+    });
+    window.addEventListener("focus", function () {
+      scheduleUiRefresh({
+        includePendingStatus: true
+      });
+    });
+    window.addEventListener("online", function () {
+      scheduleUiRefresh({
+        includePendingStatus: true
+      });
+    });
+    window.addEventListener("offline", function () {
+      scheduleUiRefresh();
+    });
+  }
+  if (typeof document !== "undefined") {
+    document.addEventListener("visibilitychange", function () {
+      if (document.visibilityState !== "visible") return;
+      scheduleUiRefresh({
+        includePendingStatus: true
+      });
+    });
+  }
+  busy = false;
+  scheduleUiRefresh({
+    forceNotifications: true,
+    includePendingStatus: true,
+    immediate: true
+  });
+});
+
+/***/ })
+
+},
+/******/ function(__webpack_require__) { // webpackRuntimeModules
+/******/ var __webpack_exec__ = function(moduleId) { return __webpack_require__(__webpack_require__.s = moduleId); }
+/******/ __webpack_require__.O(0, ["common"], function() { return __webpack_exec__("./node_modules/webpack-dev-server/client/index.js?protocol=wss%3A&hostname=localhost&port=4001&pathname=%2Fws&logging=info&overlay=true&reconnect=10&hot=true&live-reload=true"), __webpack_exec__("./node_modules/webpack/hot/dev-server.js"), __webpack_exec__("./src/taskpane/taskpane.js"); });
+/******/ var __webpack_exports__ = __webpack_require__.O();
+/******/ }
+]);
 //# sourceMappingURL=taskpane.js.map

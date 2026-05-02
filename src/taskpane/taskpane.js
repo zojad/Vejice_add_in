@@ -1,4 +1,4 @@
-/* global document, Office, Word, console, window, URLSearchParams, navigator, process, __VEJICE_ENABLE_ONLINE_REVIEW_ACTIONS__, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__, __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__ */
+/* global document, Office, Word, console, window, URLSearchParams, navigator, process, __VEJICE_ENABLE_ONLINE_REVIEW_ACTIONS__, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__, __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__, __VEJICE_BUILD_CHECK_RUN_WATCHDOG_MS__, __VEJICE_BUILD_CHECK_MAX_PARTIAL_PASSES__, __VEJICE_BUILD_CHECK_MAX_REPEATED_PROGRESS__ */
 
 import {
   checkDocumentText,
@@ -11,6 +11,7 @@ import {
   cancelDocumentCheck,
   forceResetDocumentCheckState,
   getPendingSuggestionsOnline,
+  getOnlineHighlightedSuggestionCount,
   restorePendingSuggestionsOnlineIfNeeded,
   RUNTIME_STATE_EVENT_NAME,
   RUNTIME_STATE_STORAGE_KEY,
@@ -38,10 +39,41 @@ const parsePositiveInteger = (value) => {
   if (!Number.isFinite(parsed) || parsed <= 0) return null;
   return Math.floor(parsed);
 };
+const getBuildNumberFlag = (flagName) => {
+  try {
+    switch (flagName) {
+      case "checkRunWatchdogMs":
+        return parsePositiveInteger(
+          typeof __VEJICE_BUILD_CHECK_RUN_WATCHDOG_MS__ !== "undefined"
+            ? __VEJICE_BUILD_CHECK_RUN_WATCHDOG_MS__
+            : null
+        );
+      case "checkMaxPartialPasses":
+        return parsePositiveInteger(
+          typeof __VEJICE_BUILD_CHECK_MAX_PARTIAL_PASSES__ !== "undefined"
+            ? __VEJICE_BUILD_CHECK_MAX_PARTIAL_PASSES__
+            : null
+        );
+      case "checkMaxRepeatedProgress":
+        return parsePositiveInteger(
+          typeof __VEJICE_BUILD_CHECK_MAX_REPEATED_PROGRESS__ !== "undefined"
+            ? __VEJICE_BUILD_CHECK_MAX_REPEATED_PROGRESS__
+            : null
+        );
+      default:
+        return null;
+    }
+  } catch (_err) {
+    return null;
+  }
+};
 const resolveCheckRunWatchdogMs = () => {
   let override = null;
   if (typeof window !== "undefined") {
     override = parsePositiveInteger(window.__VEJICE_CHECK_RUN_WATCHDOG_MS);
+  }
+  if (override == null) {
+    override = getBuildNumberFlag("checkRunWatchdogMs");
   }
   if (override == null && typeof process !== "undefined") {
     override = parsePositiveInteger(process.env?.VEJICE_CHECK_RUN_WATCHDOG_MS);
@@ -53,6 +85,9 @@ const resolveCheckMaxPartialPasses = () => {
   if (typeof window !== "undefined") {
     override = parsePositiveInteger(window.__VEJICE_CHECK_MAX_PARTIAL_PASSES);
   }
+  if (override == null) {
+    override = getBuildNumberFlag("checkMaxPartialPasses");
+  }
   if (override == null && typeof process !== "undefined") {
     override = parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_PARTIAL_PASSES);
   }
@@ -62,6 +97,9 @@ const resolveCheckMaxRepeatedProgress = () => {
   let override = null;
   if (typeof window !== "undefined") {
     override = parsePositiveInteger(window.__VEJICE_CHECK_MAX_REPEATED_PROGRESS);
+  }
+  if (override == null) {
+    override = getBuildNumberFlag("checkMaxRepeatedProgress");
   }
   if (override == null && typeof process !== "undefined") {
     override = parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_REPEATED_PROGRESS);
@@ -154,13 +192,20 @@ const isTaskpaneDebugEnabled = () => {
   }
   return false;
 };
+const taskpaneLogTimestamp = () => {
+  try {
+    return new Date().toISOString();
+  } catch (_err) {
+    return String(Date.now());
+  }
+};
 const log = (...args) => {
   if (!isTaskpaneDebugEnabled()) return;
-  console.log("[Vejice Taskpane]", ...args);
+  console.log(`[${taskpaneLogTimestamp()}] [Vejice Taskpane]`, ...args);
 };
 const errL = (...args) => {
   if (!isTaskpaneDebugEnabled()) return;
-  console.error("[Vejice Taskpane]", ...args);
+  console.error(`[${taskpaneLogTimestamp()}] [Vejice Taskpane]`, ...args);
 };
 const ENABLE_ONLINE_REVIEW_ACTIONS =
   typeof __VEJICE_ENABLE_ONLINE_REVIEW_ACTIONS__ === "boolean"
@@ -215,6 +260,7 @@ if (typeof window !== "undefined") {
 let busy = false;
 let online = false;
 let checkRunInFlight = false;
+let checkStopRequested = false;
 let currentSuggestionIndex = 0;
 let lastCheckClickAt = 0;
 const CHECK_CLICK_DEBOUNCE_MS = 800;
@@ -278,6 +324,20 @@ const resolveManifestMode = () => {
 const setStatus = (message) => {
   const statusLine = document.getElementById("status-line");
   if (statusLine) statusLine.textContent = message;
+};
+
+const readRuntimeStateSnapshot = () => {
+  if (typeof window === "undefined") return null;
+  try {
+    const storage = window.localStorage;
+    if (!storage) return null;
+    const raw = storage.getItem(RUNTIME_STATE_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch (_err) {
+    return null;
+  }
 };
 
 const syncStatusLoadingIndicator = () => {
@@ -346,12 +406,16 @@ const syncActionButtons = () => {
   const acceptBtn = document.getElementById("btn-accept");
   const rejectBtn = document.getElementById("btn-reject");
   const checkInProgress = isDocumentCheckInProgress();
+  const checkActive = Boolean(checkRunInFlight || checkInProgress);
   const reviewActionsEnabled = canUseOnlineReviewActions();
   const pendingCount = online ? getPendingSuggestionsOnline().length : 0;
   const hasPending = pendingCount > 0;
 
   syncStatusLoadingIndicator();
-  if (checkBtn) checkBtn.disabled = busy || checkInProgress;
+  if (checkBtn) {
+    checkBtn.disabled = busy && !checkActive;
+    checkBtn.textContent = checkActive ? "Ustavi preverjanje" : "Preveri vejice";
+  }
   if (clearHighlightsBtn) clearHighlightsBtn.disabled = busy || !online || checkInProgress || !hasPending;
   if (acceptOneBtn) acceptOneBtn.disabled = busy || !reviewActionsEnabled || checkInProgress || !hasPending;
   if (rejectOneBtn) rejectOneBtn.disabled = busy || !reviewActionsEnabled || checkInProgress || !hasPending;
@@ -381,16 +445,31 @@ const clampCurrentSuggestionIndex = (total) => {
 const refreshPendingStatus = () => {
   if (!online) return;
   const pending = getPendingSuggestionsOnline();
+  const highlightedCount = Number(getOnlineHighlightedSuggestionCount() || 0);
   clampCurrentSuggestionIndex(pending.length);
-  if (!pending.length) {
+  if (highlightedCount <= 0) {
     setStatus("");
     return;
   }
-  setStatus(`Kon\u010dano. Predlogi: ${pending.length}.`);
+  setStatus(`Kon\u010dano. Popravki: ${highlightedCount}.`);
+};
+
+const refreshDesktopProgressStatus = () => {
+  if (online) return;
+  if (!busy && !checkRunInFlight && !isDocumentCheckInProgress()) return;
+  const runtimeState = readRuntimeStateSnapshot();
+  const progress = runtimeState?.desktopProgress;
+  if (!progress || typeof progress !== "object") return;
+  const total = Number(progress.paragraphTotal ?? 0);
+  if (!Number.isFinite(total) || total <= 0) return;
+  const end = Number(progress.paragraphEnd ?? 0);
+  const safeEnd = Number.isFinite(end) ? Math.max(0, Math.min(Math.floor(end), Math.floor(total))) : 0;
+  setStatus(`Preverjam dokument ... (${safeEnd}/${Math.floor(total)})`);
 };
 
 const flushUiRefresh = ({ forceNotifications = false, includePendingStatus = false } = {}) => {
   syncActionButtons();
+  refreshDesktopProgressStatus();
   renderNotifications({ force: forceNotifications });
   if (includePendingStatus && !busy && !checkRunInFlight && !isDocumentCheckInProgress()) {
     refreshPendingStatus();
@@ -425,15 +504,29 @@ const scheduleUiRefresh = ({ forceNotifications = false, includePendingStatus = 
 };
 
 const runCheck = async () => {
+  const checkInProgress = isDocumentCheckInProgress();
+  const checkActive = Boolean(checkRunInFlight || checkInProgress);
+  if (checkActive) {
+    checkStopRequested = true;
+    try {
+      cancelDocumentCheck("ui-stop-button");
+      setStatus("Ustavljam preverjanje ...");
+    } catch (_err) {
+      setStatus("Ustavljanje ni uspelo. Poskusite znova.");
+    }
+    scheduleUiRefresh({ immediate: true });
+    return;
+  }
+  if (busy) {
+    setStatus("Počakajte, da se trenutno opravilo zaključi.");
+    return;
+  }
   const now = Date.now();
   if (now - lastCheckClickAt < CHECK_CLICK_DEBOUNCE_MS) {
     return;
   }
-  if (checkRunInFlight || busy || isDocumentCheckInProgress()) {
-    setStatus("Preverjanje \u017ee poteka.");
-    return;
-  }
   lastCheckClickAt = now;
+  checkStopRequested = false;
   checkRunInFlight = true;
   setBusy(true);
   clearTaskpaneNotifications();
@@ -458,12 +551,33 @@ const runCheck = async () => {
   });
   try {
     let summary = null;
+    const onlineAggregate = {
+      passes: 0,
+      paragraphsProcessed: 0,
+      detected: 0,
+      highlighted: 0,
+      apiErrors: 0,
+      nonCommaSkips: 0,
+    };
+    const accumulateOnlineSummary = (value) => {
+      if (!online || !value || typeof value !== "object") return;
+      if (value.mode !== "online") return;
+      onlineAggregate.passes += 1;
+      onlineAggregate.paragraphsProcessed += Number.isFinite(value.paragraphsProcessed)
+        ? Number(value.paragraphsProcessed)
+        : 0;
+      onlineAggregate.detected += Number.isFinite(value.detected) ? Number(value.detected) : 0;
+      onlineAggregate.highlighted += Number.isFinite(value.highlighted) ? Number(value.highlighted) : 0;
+      onlineAggregate.apiErrors += Number.isFinite(value.apiErrors) ? Number(value.apiErrors) : 0;
+      onlineAggregate.nonCommaSkips += Number.isFinite(value.nonCommaSkips) ? Number(value.nonCommaSkips) : 0;
+    };
     let partialPasses = 0;
     let lastPartialProgressKey = "";
     let repeatedPartialProgressCount = 0;
     while (true) {
       summary = await withCheckWatchdog(() => checkDocumentText());
       log("runCheck:summary", summary);
+      accumulateOnlineSummary(summary);
       if (summary?.status !== "partial") break;
       partialPasses += 1;
       const start = Number(summary?.paragraphStart ?? 0);
@@ -498,9 +612,25 @@ const runCheck = async () => {
     if (summary?.status === "deferred") {
       setStatus("Po\u010dakajte, da se trenutno opravilo zaklju\u010di.");
     } else if (online) {
-      refreshPendingStatus();
+      if (onlineAggregate.passes > 0) {
+        log("runCheck:online-aggregate", onlineAggregate);
+        if (
+          onlineAggregate.highlighted === 0 &&
+          onlineAggregate.detected === 0 &&
+          onlineAggregate.apiErrors === 0 &&
+          onlineAggregate.nonCommaSkips === 0
+        ) {
+          setStatus("Kon\u010dano. Ni bilo najdenih manjkajo\u010dih ali napa\u010dnih vejic.");
+        } else {
+          setStatus(`Kon\u010dano. Popravki: ${onlineAggregate.highlighted}.`);
+        }
+      } else {
+        refreshPendingStatus();
+      }
     } else if (summary?.status === "blocked") {
       setStatus("Preverjanje ustavljeno. Poglejte obvestila.");
+    } else if (checkStopRequested) {
+      setStatus("Preverjanje ustavljeno.");
     } else if (summary?.status === "error") {
       setStatus("Napaka pri preverjanju.");
     } else {

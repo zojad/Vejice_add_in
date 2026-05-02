@@ -157,6 +157,14 @@ const shouldEmitErrorLogs = () => {
 };
 const shouldEmitOnlineDriftLogs = () =>
   isOnlineDriftLogsEnabled() && isWordOnline() && shouldEmitRuntimeLogs();
+const logTimestamp = () => {
+  try {
+    return new Date().toISOString();
+  } catch (_err) {
+    return String(Date.now());
+  }
+};
+const withLogTimestamp = (label) => `[${logTimestamp()}] ${label}`;
 const isFinalCheckSummaryLog = (args = []) => {
   const first = args[0];
   if (typeof first !== "string") return false;
@@ -167,27 +175,27 @@ const isFinalCheckSummaryLog = (args = []) => {
 };
 const log = (...a) => {
   if (isFinalCheckSummaryLog(a)) {
-    console.log("[Vejice CHECK]", ...a);
+    console.log(withLogTimestamp("[Vejice CHECK]"), ...a);
     return;
   }
   if (shouldEmitRuntimeLogs()) {
-    console.log("[Vejice CHECK]", ...a);
+    console.log(withLogTimestamp("[Vejice CHECK]"), ...a);
   }
 };
 const warn = (...a) => {
   if (shouldEmitRuntimeLogs()) {
-    console.warn("[Vejice CHECK]", ...a);
+    console.warn(withLogTimestamp("[Vejice CHECK]"), ...a);
   }
 };
 const errL = (...a) => {
   if (shouldEmitErrorLogs()) {
-    console.error("[Vejice CHECK]", ...a);
+    console.error(withLogTimestamp("[Vejice CHECK]"), ...a);
   }
 };
 const logOnlineDrift = (stage, payload = {}) => {
   if (!shouldEmitOnlineDriftLogs()) return;
   try {
-    console.log("[Vejice CHECK][Online Drift]", stage, payload);
+    console.log(withLogTimestamp("[Vejice CHECK][Online Drift]"), stage, payload);
   } catch (_err) {
     // ignore console failures
   }
@@ -333,6 +341,7 @@ const ONLINE_HIGHLIGHT_FLUSH_SUGGESTIONS_DEFAULT = 24;
 const LOCAL_ONLINE_HIGHLIGHT_FLUSH_PARAGRAPHS_DEFAULT = 1;
 const LOCAL_ONLINE_HIGHLIGHT_FLUSH_SUGGESTIONS_DEFAULT = 10;
 const CHECK_BATCH_PARAGRAPHS_DEFAULT = 180;
+const DESKTOP_CHECK_MAX_PARTIAL_PASSES_DEFAULT = 100;
 const DESKTOP_CHECK_BATCH_PAGES_DEFAULT = 10;
 const DESKTOP_CHECK_CHARS_PER_PAGE_DEFAULT = 2500;
 const ONLINE_ACCEPT_MIN_CONFIDENCE_LEVEL = "medium";
@@ -351,6 +360,7 @@ const BOOLEAN_FALSE = new Set(["0", "false", "no", "off"]);
 let charSpanRangeResolutionDisabled = isWordOnline() && DISABLE_CHAR_SPAN_RANGES_ON_WORD_ONLINE;
 let charSpanRangeDisableLogged = false;
 let onlineAmbiguousInsertAnchorSkips = 0;
+let desktopRuntimeProgress = null;
 const checkBatchCursorByMode = {
   online: { fingerprint: null, nextIndex: 0, totalParagraphs: 0 },
   desktop: { fingerprint: null, nextIndex: 0, totalParagraphs: 0 },
@@ -715,7 +725,7 @@ const DESKTOP_DIRECT_INSERT_ENABLED = isDesktopDirectInsertEnabled();
 const logDesktopVerbose = (...a) => {
   if (!DESKTOP_VERBOSE_LOGS) return;
   try {
-    console.log("[Vejice CHECK][Desktop]", ...a);
+    console.log(withLogTimestamp("[Vejice CHECK][Desktop]"), ...a);
   } catch (_err) {
     // ignore console failures
   }
@@ -723,7 +733,7 @@ const logDesktopVerbose = (...a) => {
 const warnDesktopVerbose = (...a) => {
   if (!DESKTOP_VERBOSE_LOGS) return;
   try {
-    console.warn("[Vejice CHECK][Desktop]", ...a);
+    console.warn(withLogTimestamp("[Vejice CHECK][Desktop]"), ...a);
   } catch (_err) {
     // ignore console failures
   }
@@ -964,6 +974,23 @@ export function getPendingSuggestionsOnline(debugSnapshot = false) {
     originalPos: sug?.originalPos,
     snippets: sug?.snippets,
   }));
+}
+
+export function getOnlineHighlightedSuggestionCount() {
+  let count = 0;
+  for (const suggestion of pendingSuggestionsOnline) {
+    if (!suggestion || typeof suggestion !== "object") continue;
+    const markerTag =
+      typeof suggestion.markerTag === "string" ? suggestion.markerTag.trim() : "";
+    const markerChannel =
+      suggestion.markerChannel === "highlight" || suggestion.markerChannel === "underline"
+        ? suggestion.markerChannel
+        : "";
+    if (markerTag || markerChannel) {
+      count += 1;
+    }
+  }
+  return count;
 }
 
 function toSerializableSuggestion(suggestion) {
@@ -1943,6 +1970,22 @@ function resolveOnlineCheckTimeoutMs() {
   return timeoutOverride ?? ONLINE_CHECK_TIMEOUT_MS_DEFAULT;
 }
 
+function resolveDesktopCheckMaxPartialPasses() {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override =
+      parsePositiveInteger(window.__VEJICE_DESKTOP_CHECK_MAX_PARTIAL_PASSES) ??
+      parsePositiveInteger(window.__VEJICE_CHECK_MAX_PARTIAL_PASSES);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override =
+      parsePositiveInteger(process.env?.VEJICE_DESKTOP_CHECK_MAX_PARTIAL_PASSES) ??
+      parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_PARTIAL_PASSES);
+  }
+  const value = override ?? DESKTOP_CHECK_MAX_PARTIAL_PASSES_DEFAULT;
+  return Math.max(1, Math.min(value, 5000));
+}
+
 function shouldClearChunkCacheAfterFirstScan() {
   let override = null;
   if (typeof window !== "undefined") {
@@ -2241,10 +2284,15 @@ function emitRuntimeStateUpdate(reason = null) {
   if (typeof window === "undefined") return;
   const normalizedReason =
     typeof reason === "string" && reason.trim() ? reason.trim() : null;
+  const desktopProgress =
+    desktopRuntimeProgress && typeof desktopRuntimeProgress === "object"
+      ? { ...desktopRuntimeProgress }
+      : null;
   const payload = {
     activeAction: getActiveActionType(),
     checkInProgress: isDocumentCheckInProgress(),
     pendingCount: Array.isArray(pendingSuggestionsOnline) ? pendingSuggestionsOnline.length : 0,
+    desktopProgress,
     timestamp: Date.now(),
     reason: normalizedReason,
   };
@@ -2271,6 +2319,32 @@ function emitRuntimeStateUpdate(reason = null) {
     }
   } catch (_eventErr) {
     // ignore event dispatch failures
+  }
+}
+
+function setDesktopRuntimeProgress(progress, { emit = true, reason = null } = {}) {
+  if (!progress || typeof progress !== "object") {
+    desktopRuntimeProgress = null;
+  } else {
+    const paragraphStart = Number.isFinite(progress.paragraphStart)
+      ? Math.max(0, Math.floor(progress.paragraphStart))
+      : 0;
+    const paragraphEnd = Number.isFinite(progress.paragraphEnd)
+      ? Math.max(0, Math.floor(progress.paragraphEnd))
+      : paragraphStart;
+    const paragraphTotal = Number.isFinite(progress.paragraphTotal)
+      ? Math.max(0, Math.floor(progress.paragraphTotal))
+      : 0;
+    desktopRuntimeProgress = {
+      mode: "desktop",
+      paragraphStart,
+      paragraphEnd,
+      paragraphTotal,
+      status: typeof progress.status === "string" ? progress.status : null,
+    };
+  }
+  if (emit) {
+    emitRuntimeStateUpdate(reason || "desktop-progress");
   }
 }
 
@@ -2862,6 +2936,37 @@ async function documentHasTrackedChanges(context) {
       return false;
     }
     throw err;
+  }
+}
+
+async function ensureDesktopTrackChangesEnabled(
+  context,
+  { syncRunner = null, warnLabel = "trackRevisions unavailable -> require manual enablement" } = {}
+) {
+  if (!context?.document) {
+    notifyTrackChangesRequired();
+    return false;
+  }
+  const doc = context.document;
+  try {
+    if (typeof syncRunner === "function") {
+      await syncRunner(async () => {
+        doc.load("trackRevisions");
+        await context.sync();
+      });
+    } else {
+      doc.load("trackRevisions");
+      await context.sync();
+    }
+    if (!doc.trackRevisions) {
+      notifyTrackChangesRequired();
+      return false;
+    }
+    return true;
+  } catch (trackErr) {
+    warn(warnLabel, trackErr);
+    notifyTrackChangesRequired();
+    return false;
   }
 }
 
@@ -13539,6 +13644,15 @@ export async function clearPendingSuggestionHighlightsOnline() {
     return summary;
   };
 
+  const hasRenderStateMarkers = (() => {
+    for (const renderState of onlineParagraphRenderState.values()) {
+      if (Array.isArray(renderState?.markerTags) && renderState.markerTags.length > 0) {
+        return true;
+      }
+    }
+    return false;
+  })();
+
   if (!pendingSuggestionsOnline.length) {
     const restored = restorePendingSuggestionsOnline();
     summary.restored = restored;
@@ -13547,7 +13661,7 @@ export async function clearPendingSuggestionHighlightsOnline() {
     }
   }
   summary.pendingBefore = pendingSuggestionsOnline.length;
-  if (!pendingSuggestionsOnline.length) {
+  if (!pendingSuggestionsOnline.length && !hasRenderStateMarkers) {
     return finalize("noop", "no-pending-suggestions");
   }
 
@@ -13571,6 +13685,38 @@ export async function clearPendingSuggestionHighlightsOnline() {
             ? paras.items[suggestion.paragraphIndex] || null
             : null,
       }));
+      const queuedMarkerTags = new Set(
+        entries
+          .map((entry) =>
+            typeof entry?.suggestion?.markerTag === "string" ? entry.suggestion.markerTag.trim() : ""
+          )
+          .filter(Boolean)
+      );
+      for (const [paragraphIndex, renderState] of onlineParagraphRenderState.entries()) {
+        const markerTags = Array.isArray(renderState?.markerTags) ? renderState.markerTags : [];
+        for (const markerTag of markerTags) {
+          const safeTag = typeof markerTag === "string" ? markerTag.trim() : "";
+          if (!safeTag || queuedMarkerTags.has(safeTag)) continue;
+          queuedMarkerTags.add(safeTag);
+          const syntheticSuggestion = {
+            id: `clear-state-${paragraphIndex}-${safeTag}`,
+            paragraphIndex: Number.isFinite(paragraphIndex) ? paragraphIndex : -1,
+            markerTag: safeTag,
+            markerChannel: "highlight",
+            previousHighlightColor: null,
+            previousUnderline: null,
+            previousUnderlineColor: null,
+            meta: {},
+          };
+          entries.push({
+            suggestion: syntheticSuggestion,
+            paragraph:
+              Number.isFinite(paragraphIndex) && paragraphIndex >= 0
+                ? paras.items[paragraphIndex] || null
+                : null,
+          });
+        }
+      }
       const clearResult = await wordOnlineAdapter.clearHighlights(context, entries, paras, {
         preferSingleFlush: true,
       });
@@ -13584,6 +13730,9 @@ export async function clearPendingSuggestionHighlightsOnline() {
       if (Number.isFinite(paragraphIndex) && paragraphIndex >= 0) {
         clearOnlineParagraphRenderState(paragraphIndex);
       }
+    }
+    for (const paragraphIndex of onlineParagraphRenderState.keys()) {
+      clearOnlineParagraphRenderState(paragraphIndex);
     }
     persistPendingSuggestionsOnline();
     if (summary.failedClear > 0) {
@@ -13666,16 +13815,20 @@ export async function checkDocumentText() {
       skipTrackedChangesGuards: false,
       forcedStartIndex: null,
     });
+    setDesktopRuntimeProgress(desktopSummary, {
+      emit: Number.isFinite(desktopSummary?.paragraphTotal) && desktopSummary.paragraphTotal > 0,
+    });
     const desktopPassSummaries = [];
     if (desktopSummary && typeof desktopSummary === "object") {
       desktopPassSummaries.push(desktopSummary);
     }
     let desktopPasses = 0;
+    const desktopMaxPartialPasses = resolveDesktopCheckMaxPartialPasses();
     let desktopStallRecoveries = 0;
     let desktopLastEnd = Number.isFinite(desktopSummary?.paragraphEnd)
       ? Math.floor(desktopSummary.paragraphEnd)
       : 0;
-    while (desktopSummary?.status === "partial" && desktopPasses < 100) {
+    while (desktopSummary?.status === "partial" && desktopPasses < desktopMaxPartialPasses) {
       desktopPasses += 1;
       const nextStartIndex = Number.isFinite(desktopSummary?.paragraphEnd)
         ? Math.floor(desktopSummary.paragraphEnd)
@@ -13716,6 +13869,9 @@ export async function checkDocumentText() {
       desktopSummary = await checkDocumentTextDesktop(actionToken, {
         skipTrackedChangesGuards: true,
         forcedStartIndex: forcedNextStartIndex,
+      });
+      setDesktopRuntimeProgress(desktopSummary, {
+        emit: Number.isFinite(desktopSummary?.paragraphTotal) && desktopSummary.paragraphTotal > 0,
       });
       if (desktopSummary && typeof desktopSummary === "object") {
         desktopPassSummaries.push(desktopSummary);
@@ -13956,6 +14112,7 @@ export async function checkDocumentText() {
     );
     return aggregatedSummary;
   } finally {
+    setDesktopRuntimeProgress(null, { emit: false });
     documentCheckInProgress = false;
     finishAction(actionToken);
     completedCheckRuns += 1;
@@ -14256,21 +14413,13 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
           logDesktopVerbose("Desktop phase: tracked-change guard:skipped (continuation)");
         }
 
-        // On desktop we require the user to enable Track Changes manually.
-        const doc = context.document;
-        try {
-          logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:start");
-          doc.load("trackRevisions");
-          await context.sync();
-          logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:done");
-          if (!doc.trackRevisions) {
-            notifyTrackChangesRequired();
-            desktopCheckBlocked = true;
-            return;
-          }
-        } catch (trackErr) {
-          warn("trackRevisions not available -> require manual enablement", trackErr);
-          notifyTrackChangesRequired();
+        // On desktop we require the user to keep Track Changes enabled.
+        logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:start");
+        const readTrackEnabled = await ensureDesktopTrackChangesEnabled(context, {
+          warnLabel: "trackRevisions not available -> require manual enablement",
+        });
+        logDesktopVerbose("Desktop phase: doc.load(trackRevisions) -> sync:done");
+        if (!readTrackEnabled) {
           desktopCheckBlocked = true;
           return;
         }
@@ -14375,7 +14524,11 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
         continue;
       }
       paragraphsProcessed++;
-      if (!paragraphCacheDisabled && isDesktopParagraphUnchangedAndSuggestionFree(snapshot)) {
+      if (
+        !paragraphCacheDisabled &&
+        snapshot.paragraphIndex > 0 &&
+        isDesktopParagraphUnchangedAndSuggestionFree(snapshot)
+      ) {
         cacheHits++;
         unchangedHardSkips++;
         logDesktopVerbose("Desktop hard-skip unchanged paragraph (clean cache)", {
@@ -14554,24 +14707,18 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
               )
             ) {
               notifyTrackedChangesPresent();
+              desktopCheckBlocked = true;
               return;
             }
           } else {
             logDesktopVerbose("Desktop apply guard tracked-changes skipped (continuation)");
           }
-          const doc = context.document;
-          try {
-            await withDesktopSyncScope("apply_guard_track_revisions", async () => {
-              doc.load("trackRevisions");
-              await context.sync();
-            });
-            if (!doc.trackRevisions) {
-              notifyTrackChangesRequired();
-              return;
-            }
-          } catch (trackErr) {
-            warn("trackRevisions unavailable during apply phase", trackErr);
-            notifyTrackChangesRequired();
+          const applyTrackEnabled = await ensureDesktopTrackChangesEnabled(context, {
+            syncRunner: (fn) => withDesktopSyncScope("apply_guard_track_revisions", fn),
+            warnLabel: "trackRevisions unavailable during apply phase",
+          });
+          if (!applyTrackEnabled) {
+            desktopCheckBlocked = true;
             return;
           }
           const paras = await withDesktopSyncScope("apply_get_paragraphs_items", () =>
@@ -14592,6 +14739,14 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
             logDesktopVerbose("Desktop direct insert fast-path disabled");
           }
           for (const job of applyJobs) {
+          const loopTrackEnabled = await ensureDesktopTrackChangesEnabled(context, {
+            syncRunner: (fn) => withDesktopSyncScope("apply_guard_track_revisions_loop", fn),
+            warnLabel: "trackRevisions unavailable during apply phase",
+          });
+          if (!loopTrackEnabled) {
+            desktopCheckBlocked = true;
+            return;
+          }
           const paragraph = paras.items[job.paragraphIndex];
           if (!paragraph) {
             warn("Desktop apply skipped: paragraph missing", {
@@ -15660,6 +15815,36 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
       });
       desktopPhaseTiming.applyMs = Math.max(0, tnow() - applyPhaseStartedAt);
     }
+    if (desktopCheckBlocked) {
+      return {
+        status: "blocked",
+        paragraphsProcessed,
+        inserted: totalInserted,
+        deleted: totalDeleted,
+        detected: suggestionsDetected,
+        apiErrors,
+        nonCommaSkips,
+        nonCommaSalvaged,
+        applyRangeMisses,
+        applyOpFailures,
+        desktopPhaseTiming: {
+          readMs: roundMs(desktopPhaseTiming.readMs),
+          analyzeMs: roundMs(desktopPhaseTiming.analyzeMs),
+          applyMs: roundMs(desktopPhaseTiming.applyMs),
+          anchorSeedMs: roundMs(desktopPhaseTiming.anchorSeedMs),
+          applyPlanMs: roundMs(desktopPhaseTiming.applyPlanMs),
+          applyOpsMs: roundMs(desktopPhaseTiming.applyOpsMs),
+          cleanupMs: roundMs(desktopPhaseTiming.cleanupMs),
+        },
+        desktopSyncCounters: {
+          ...desktopSyncCounters,
+        },
+        mode: "desktop",
+        paragraphStart: desktopBatchWindow?.startIndex ?? 0,
+        paragraphEnd: desktopBatchWindow?.startIndex ?? 0,
+        paragraphTotal: desktopBatchWindow?.totalParagraphs ?? paragraphSnapshots.length,
+      };
+    }
 
     log(
       "DONE checkDocumentText() | paragraphs:",
@@ -16232,6 +16417,9 @@ async function checkDocumentTextOnline(checkToken) {
         const renderList = Array.isArray(suggestionsToRender)
           ? suggestionsToRender.filter(Boolean)
           : [];
+        if (Number.isFinite(paragraphIndex) && paragraphIndex >= 0) {
+          reconciledParagraphIndexes.add(paragraphIndex);
+        }
 
         const sourceHash = buildDesktopParagraphHash(sourceText);
         const suggestionHash = buildParagraphSuggestionSetHash(sourceText, renderList);
@@ -16444,7 +16632,11 @@ async function checkDocumentTextOnline(checkToken) {
 
         log(`P${idx} ONLINE: len=${original.length} | "${SNIP(trimmed)}"`);
         paragraphsProcessed++;
-        if (!paragraphCacheDisabled && isOnlineParagraphUnchangedAndSuggestionFree(snapshot)) {
+        if (
+          !paragraphCacheDisabled &&
+          idx > 0 &&
+          isOnlineParagraphUnchangedAndSuggestionFree(snapshot)
+        ) {
           await clearPreviousRenderMarkers(idx, p);
           cacheHits++;
           unchangedHardSkips++;
@@ -16877,14 +17069,15 @@ async function checkDocumentTextOnline(checkToken) {
       notifyNoIssuesFound();
     }
     const onlineHasMore = Boolean(onlineBatchWindow?.hasMore);
-    if (onlineHasMore) {
-      const restored = recoverPendingSuggestionsAfterInterruptedOnlineScan(
-        previousPendingSuggestionsSnapshot,
-        reconciledParagraphIndexes
-      );
-      if (restored > 0) {
-        log("Restored pending suggestions outside processed online batch", { restored });
-      }
+    const restored = recoverPendingSuggestionsAfterInterruptedOnlineScan(
+      previousPendingSuggestionsSnapshot,
+      reconciledParagraphIndexes
+    );
+    if (restored > 0) {
+      log("Restored pending suggestions outside processed online batch", {
+        restored,
+        onlineHasMore,
+      });
     }
     commitCheckBatchWindow("online", onlineBatchWindow);
     return {

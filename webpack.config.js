@@ -111,6 +111,15 @@ module.exports = async (env, options) => {
         __VEJICE_BUILD_ONLINE_DRIFT_LOGS__: JSON.stringify(buildOnlineDriftLogs),
         __VEJICE_BUILD_DEBUG__: JSON.stringify(buildDebugLogs),
         __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__: JSON.stringify(buildDesktopVerboseLogs),
+        __VEJICE_BUILD_CHECK_RUN_WATCHDOG_MS__: JSON.stringify(
+          process.env.VEJICE_CHECK_RUN_WATCHDOG_MS || ""
+        ),
+        __VEJICE_BUILD_CHECK_MAX_PARTIAL_PASSES__: JSON.stringify(
+          process.env.VEJICE_CHECK_MAX_PARTIAL_PASSES || ""
+        ),
+        __VEJICE_BUILD_CHECK_MAX_REPEATED_PROGRESS__: JSON.stringify(
+          process.env.VEJICE_CHECK_MAX_REPEATED_PROGRESS || ""
+        ),
         "process.env.VEJICE_API_URL": JSON.stringify(process.env.VEJICE_API_URL || ""),
         "process.env.VEJICE_USE_MOCK": JSON.stringify(process.env.VEJICE_USE_MOCK || ""),
         "process.env.VEJICE_USE_LEMMATIZER": JSON.stringify(process.env.VEJICE_USE_LEMMATIZER || ""),
@@ -132,6 +141,24 @@ module.exports = async (env, options) => {
         "process.env.VEJICE_LEMMAS_URL": JSON.stringify(process.env.VEJICE_LEMMAS_URL || ""),
         "process.env.VEJICE_LEMMAS_TIMEOUT_MS": JSON.stringify(
           process.env.VEJICE_LEMMAS_TIMEOUT_MS || ""
+        ),
+        "process.env.VEJICE_ONLINE_CHECK_TIMEOUT_MS": JSON.stringify(
+          process.env.VEJICE_ONLINE_CHECK_TIMEOUT_MS || ""
+        ),
+        "process.env.VEJICE_ONLINE_PARAGRAPH_TIMEOUT_MS": JSON.stringify(
+          process.env.VEJICE_ONLINE_PARAGRAPH_TIMEOUT_MS || ""
+        ),
+        "process.env.VEJICE_CHECK_RUN_WATCHDOG_MS": JSON.stringify(
+          process.env.VEJICE_CHECK_RUN_WATCHDOG_MS || ""
+        ),
+        "process.env.VEJICE_CHECK_MAX_PARTIAL_PASSES": JSON.stringify(
+          process.env.VEJICE_CHECK_MAX_PARTIAL_PASSES || ""
+        ),
+        "process.env.VEJICE_CHECK_MAX_REPEATED_PROGRESS": JSON.stringify(
+          process.env.VEJICE_CHECK_MAX_REPEATED_PROGRESS || ""
+        ),
+        "process.env.VEJICE_API_TIMEOUT_MS": JSON.stringify(
+          process.env.VEJICE_API_TIMEOUT_MS || ""
         ),
         "process.env.VEJICE_QUIET_LOGS": JSON.stringify(process.env.VEJICE_QUIET_LOGS || ""),
         "process.env.VEJICE_ERROR_LOGS": JSON.stringify(process.env.VEJICE_ERROR_LOGS || ""),
