@@ -326,6 +326,8 @@ const LONG_PARAGRAPH_MESSAGE = "je predolg za preverjanje, razdelite ga na več 
 const LONG_SENTENCE_MESSAGE = "Nekatere od povedi so predolge. Razdelite jih na ve\u010d povedi in poskusite znova.";
 const CHUNK_API_ERROR_MESSAGE =
   "Nekatere povedi niso bile pregledane.";
+const PARTIAL_API_DRIFT_WARNING_MESSAGE =
+  "Nekateri predlogi so lahko zamaknjeni ali manj zanesljivi zaradi delne napake pri obdelavi.";
 const PARAGRAPH_NON_COMMA_MESSAGE = "V nekaterih delih besedila predlogi niso bili prikazani.";
 const TRACKED_CHANGES_PRESENT_MESSAGE = "Najprej sprejmite ali zavrnite obstoje\u010de spremembe (Track Changes) in nato ponovno za\u017eenite preverjanje.";
 const TRACK_CHANGES_REQUIRED_MESSAGE = "Vklju\u010dite Sledenje spremembam (Track Changes) in poskusite znova.";
@@ -1924,6 +1926,7 @@ const DESKTOP_ANALYZE_CONCURRENCY_DEFAULT = 1;
 const DESKTOP_DEFERRED_REFRESH_EVERY_OPS_DEFAULT = 1;
 const ONLINE_MARKER_TAG_CLEANUP_BATCH_SIZE_DEFAULT = 30;
 const POST_APPLY_CHECK_COOLDOWN_MS_DEFAULT = 1200;
+const ONLINE_CHECK_SUPERSEDE_WAIT_MS_DEFAULT = 120000;
 const CHECK_ABORT_REASON_TIMEOUT = "check-timeout";
 const CHECK_ABORT_REASON_CANCELLED = "check-cancelled";
 const CHECK_ABORT_REASON_SUPERSEDED = "check-superseded";
@@ -2098,6 +2101,17 @@ function resolvePostApplyCheckCooldownMs() {
     override = parsePositiveInteger(process.env?.VEJICE_POST_APPLY_CHECK_COOLDOWN_MS);
   }
   return override ?? POST_APPLY_CHECK_COOLDOWN_MS_DEFAULT;
+}
+
+function resolveOnlineCheckSupersedeWaitMs() {
+  let override = null;
+  if (typeof window !== "undefined") {
+    override = parsePositiveInteger(window.__VEJICE_ONLINE_CHECK_SUPERSEDE_WAIT_MS);
+  }
+  if (override == null && typeof process !== "undefined") {
+    override = parsePositiveInteger(process.env?.VEJICE_ONLINE_CHECK_SUPERSEDE_WAIT_MS);
+  }
+  return override ?? ONLINE_CHECK_SUPERSEDE_WAIT_MS_DEFAULT;
 }
 
 function startPostApplyCheckCooldown(ms = resolvePostApplyCheckCooldownMs()) {
@@ -2891,6 +2905,10 @@ function notifyApiUnavailable({ offline = false } = {}) {
 function notifyNoIssuesFound() {
   log("No comma issues found - notifying taskpane");
   queueScanNotification(NO_ISSUES_FOUND_MESSAGE, "info");
+}
+
+function notifyPartialApiDriftWarning() {
+  queueScanNotification(PARTIAL_API_DRIFT_WARNING_MESSAGE, "warn");
 }
 
 function resetNotificationFlags() {
@@ -13765,12 +13783,17 @@ export async function checkDocumentText() {
     if (activeToken) {
       warn("checkDocumentText: superseding active online check", { activeCheckId: activeToken.id });
       cancelActionToken(activeToken, CHECK_ABORT_REASON_SUPERSEDED);
+      const supersedeWaitMs = resolveOnlineCheckSupersedeWaitMs();
       const stopped = await waitForOnlineScanCompletion({
-        timeoutMs: 6000,
+        timeoutMs: supersedeWaitMs,
         pollMs: 30,
         silent: true,
       });
       if (!stopped) {
+        warn("checkDocumentText: previous online check did not stop in time", {
+          waitMs: supersedeWaitMs,
+          activeAction: getActiveActionType(),
+        });
         return {
           status: "deferred",
           reason: "previous-check-still-stopping",
@@ -13795,6 +13818,8 @@ export async function checkDocumentText() {
   }
   documentCheckInProgress = true;
   resetNotificationFlags();
+  let usedDesktopPath = false;
+  let desktopTerminalStatus = null;
   const clearChunkCacheForThisRun =
     completedCheckRuns > 0 &&
     shouldClearChunkCacheAfterFirstScan() &&
@@ -13811,6 +13836,7 @@ export async function checkDocumentText() {
       getCheckAbortController(actionToken, { create: true });
       return await checkDocumentTextOnline(actionToken);
     }
+    usedDesktopPath = true;
     let desktopSummary = await checkDocumentTextDesktop(actionToken, {
       skipTrackedChangesGuards: false,
       forcedStartIndex: null,
@@ -13867,6 +13893,8 @@ export async function checkDocumentText() {
       }
       desktopLastEnd = forcedNextStartIndex;
       desktopSummary = await checkDocumentTextDesktop(actionToken, {
+        // Continuation passes must ignore "revisions present" because edits from this run
+        // are themselves tracked changes and would otherwise self-block long scans.
         skipTrackedChangesGuards: true,
         forcedStartIndex: forcedNextStartIndex,
       });
@@ -13878,6 +13906,7 @@ export async function checkDocumentText() {
       }
     }
     if (desktopPassSummaries.length <= 1) {
+      desktopTerminalStatus = typeof desktopSummary?.status === "string" ? desktopSummary.status : null;
       return desktopSummary;
     }
     const sumTopLevelNumber = (key) =>
@@ -14110,8 +14139,15 @@ export async function checkDocumentText() {
       "| totalMs:",
       aggregatedSummary.totalMs
     );
+    desktopTerminalStatus =
+      typeof aggregatedSummary?.status === "string" ? aggregatedSummary.status : null;
     return aggregatedSummary;
   } finally {
+    if (usedDesktopPath && desktopTerminalStatus !== "partial") {
+      // New standalone desktop runs must start from the beginning unless we
+      // intentionally returned "partial" for an immediate continuation.
+      checkBatchCursorByMode.desktop = { fingerprint: null, nextIndex: 0, totalParagraphs: 0 };
+    }
     setDesktopRuntimeProgress(null, { emit: false });
     documentCheckInProgress = false;
     finishAction(actionToken);
@@ -15965,6 +16001,9 @@ async function checkDocumentTextDesktop(checkToken, options = {}) {
     ) {
       notifyApiUnavailable({ offline: isBrowserOffline() });
     }
+    if (apiErrors > 0 && (suggestionsDetected > 0 || totalInserted > 0 || totalDeleted > 0)) {
+      notifyPartialApiDriftWarning();
+    }
     if (
       paragraphsProcessed > 0 &&
       suggestionsDetected === 0 &&
@@ -17055,6 +17094,9 @@ async function checkDocumentTextOnline(checkToken) {
       suggestions === 0
     ) {
       notifyApiUnavailable({ offline: isBrowserOffline() });
+    }
+    if (apiErrors > 0 && (suggestionsDetected > 0 || suggestions > 0)) {
+      notifyPartialApiDriftWarning();
     }
     if (
       paragraphsProcessed > 0 &&

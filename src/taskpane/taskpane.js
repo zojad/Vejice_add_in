@@ -23,6 +23,8 @@ import {
   publishTaskpaneNotifications,
   TASKPANE_NOTIFICATION_EVENT_NAME,
   TASKPANE_NOTIFICATION_STORAGE_KEY,
+  setTaskpaneNotificationScope,
+  getTaskpaneNotificationScopeStoragePrefix,
 } from "../utils/notifications.js";
 
 const parseBooleanFlag = (value) => {
@@ -91,7 +93,7 @@ const resolveCheckMaxPartialPasses = () => {
   if (override == null && typeof process !== "undefined") {
     override = parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_PARTIAL_PASSES);
   }
-  return override ?? 300;
+  return override ?? 1200;
 };
 const resolveCheckMaxRepeatedProgress = () => {
   let override = null;
@@ -104,7 +106,7 @@ const resolveCheckMaxRepeatedProgress = () => {
   if (override == null && typeof process !== "undefined") {
     override = parsePositiveInteger(process.env?.VEJICE_CHECK_MAX_REPEATED_PROGRESS);
   }
-  return override ?? 12;
+  return override ?? 40;
 };
 const getBuildBooleanFlag = (flagName) => {
   try {
@@ -279,6 +281,7 @@ let pendingUiRefresh = {
   forceNotifications: false,
   includePendingStatus: false,
 };
+const NOTIFICATION_SCOPE_SETTING_KEY = "vejice.notificationScopeId.v1";
 
 const isOffline = () => {
   try {
@@ -286,6 +289,42 @@ const isOffline = () => {
   } catch (_err) {
     return false;
   }
+};
+
+const saveNotificationScopeSettingAsync = () =>
+  new Promise((resolve) => {
+    try {
+      Office.context.document.settings.saveAsync((result) => {
+        resolve(result?.status === Office.AsyncResultStatus.Succeeded);
+      });
+    } catch (_err) {
+      resolve(false);
+    }
+  });
+
+const resolveDocumentNotificationScope = async () => {
+  try {
+    const docUrl = typeof Office?.context?.document?.url === "string" ? Office.context.document.url.trim() : "";
+    if (docUrl) return `docurl:${docUrl}`;
+  } catch (_err) {
+    // ignore document.url lookup failures
+  }
+  try {
+    const settings = Office?.context?.document?.settings;
+    if (settings && typeof settings.get === "function" && typeof settings.set === "function") {
+      const existing = settings.get(NOTIFICATION_SCOPE_SETTING_KEY);
+      if (typeof existing === "string" && existing.trim()) {
+        return `docid:${existing.trim()}`;
+      }
+      const created = `${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 10)}`;
+      settings.set(NOTIFICATION_SCOPE_SETTING_KEY, created);
+      const saved = await saveNotificationScopeSettingAsync();
+      if (saved) return `docid:${created}`;
+    }
+  } catch (_err) {
+    // ignore settings lookup failures
+  }
+  return `session:${Date.now().toString(36)}.${Math.random().toString(36).slice(2, 8)}`;
 };
 
 const withCheckWatchdog = async (promiseFactory, timeoutMs = CHECK_RUN_WATCHDOG_MS) => {
@@ -701,11 +740,12 @@ const runClearHighlights = async () => {
     const summary = await clearPendingSuggestionHighlightsOnline();
     const cleared = Number(summary?.clearedMarkers ?? 0);
     const failedClear = Number(summary?.failedClear ?? 0);
+    const remainingHighlighted = Number(getOnlineHighlightedSuggestionCount() || 0);
     if (summary?.status === "deferred") {
       setStatus("Po\u010dakajte, da se trenutno opravilo zaklju\u010di.");
     } else if (cleared > 0) {
       setStatus("Ozna\u010dbe so bile pobrisane.");
-      if (failedClear > 0) {
+      if (failedClear > 0 && remainingHighlighted > 0) {
         publishTaskpaneNotifications(
           ["Nekaterih ozna\u010db ni bilo mogo\u010de pobrisati."],
           { source: "taskpane", level: "warn" }
@@ -865,7 +905,7 @@ const runRejectOne = async () => {
     setBusy(false);
   }
 };
-Office.onReady((info) => {
+Office.onReady(async (info) => {
   if (info.host !== Office.HostType.Word) return;
 
   const sideload = document.getElementById("sideload-msg");
@@ -882,6 +922,9 @@ Office.onReady((info) => {
     online,
     href: typeof window !== "undefined" ? window.location.href : "",
   });
+  const notificationScope = await resolveDocumentNotificationScope();
+  setTaskpaneNotificationScope(notificationScope);
+  log("taskpane:notification-scope", { notificationScope });
   // Notifications are persisted in localStorage and can leak across documents.
   // Start each taskpane session clean to avoid showing stale messages in new docs.
   clearTaskpaneNotifications();
@@ -936,7 +979,11 @@ Office.onReady((info) => {
   if (typeof window !== "undefined") {
     window.addEventListener("storage", (evt) => {
       if (!evt) return;
-      if (evt.key === TASKPANE_NOTIFICATION_STORAGE_KEY) {
+      const notificationScopedPrefix = getTaskpaneNotificationScopeStoragePrefix();
+      if (
+        evt.key === TASKPANE_NOTIFICATION_STORAGE_KEY ||
+        (typeof evt.key === "string" && evt.key.startsWith(notificationScopedPrefix))
+      ) {
         scheduleUiRefresh({ forceNotifications: true });
         return;
       }

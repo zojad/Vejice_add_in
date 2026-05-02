@@ -4,6 +4,9 @@ const DEFAULT_STORAGE_KEY = "vejice.ui.notifications.v1";
 const DEFAULT_EVENT_NAME = "vejice:notifications-updated";
 const DEFAULT_MAX_ITEMS = 120;
 const VALID_LEVELS = new Set(["info", "warn", "error"]);
+const SCOPE_GLOBAL = "global";
+const SCOPE_WINDOW_KEY = "__VEJICE_NOTIFICATION_SCOPE__";
+const SCOPE_STORAGE_KEY_PREFIX = `${DEFAULT_STORAGE_KEY}.scope.`;
 
 export const TASKPANE_NOTIFICATION_STORAGE_KEY = DEFAULT_STORAGE_KEY;
 export const TASKPANE_NOTIFICATION_EVENT_NAME = DEFAULT_EVENT_NAME;
@@ -25,6 +28,31 @@ function safeGetStorage() {
   } catch (_err) {
     return null;
   }
+}
+
+function resolveScopeValue() {
+  if (typeof window === "undefined") return SCOPE_GLOBAL;
+  const raw = window[SCOPE_WINDOW_KEY];
+  if (typeof raw !== "string") return SCOPE_GLOBAL;
+  const normalized = raw.trim();
+  return normalized || SCOPE_GLOBAL;
+}
+
+function normalizeScopeForStorage(scope) {
+  if (typeof scope !== "string") return SCOPE_GLOBAL;
+  const normalized = scope.trim();
+  if (!normalized) return SCOPE_GLOBAL;
+  try {
+    return encodeURIComponent(normalized).slice(0, 240) || SCOPE_GLOBAL;
+  } catch (_err) {
+    return normalized.slice(0, 240) || SCOPE_GLOBAL;
+  }
+}
+
+function getScopedStorageKey() {
+  const scope = normalizeScopeForStorage(resolveScopeValue());
+  if (scope === SCOPE_GLOBAL) return DEFAULT_STORAGE_KEY;
+  return `${SCOPE_STORAGE_KEY_PREFIX}${scope}`;
 }
 
 function normalizeEntry(raw) {
@@ -104,14 +132,14 @@ export function shouldUseToastFallback() {
 
 export function readTaskpaneNotifications() {
   const storage = safeGetStorage();
-  return parseStoredEntries(storage, DEFAULT_STORAGE_KEY);
+  return parseStoredEntries(storage, getScopedStorageKey());
 }
 
 export function clearTaskpaneNotifications() {
   const storage = safeGetStorage();
   if (!storage) return false;
   try {
-    storage.removeItem(DEFAULT_STORAGE_KEY);
+    storage.removeItem(getScopedStorageKey());
     emitNotificationEvent();
     return true;
   } catch (_err) {
@@ -154,7 +182,8 @@ export function publishTaskpaneNotifications(messages, options = {}) {
   const storage = safeGetStorage();
   if (!storage) return 0;
 
-  const existing = parseStoredEntries(storage, DEFAULT_STORAGE_KEY);
+  const scopedKey = getScopedStorageKey();
+  const existing = parseStoredEntries(storage, scopedKey);
   const next = [...existing];
   const now = Date.now();
   for (let i = 0; i < normalizedMessages.length; i++) {
@@ -168,7 +197,17 @@ export function publishTaskpaneNotifications(messages, options = {}) {
     );
   }
   const trimmed = next.slice(-limit);
-  const written = writeStoredEntries(storage, DEFAULT_STORAGE_KEY, trimmed);
+  const written = writeStoredEntries(storage, scopedKey, trimmed);
   if (written) emitNotificationEvent();
   return written ? normalizedMessages.length : 0;
+}
+
+export function setTaskpaneNotificationScope(scope) {
+  if (typeof window === "undefined") return;
+  const normalizedScope = typeof scope === "string" ? scope.trim() : "";
+  window[SCOPE_WINDOW_KEY] = normalizedScope || SCOPE_GLOBAL;
+}
+
+export function getTaskpaneNotificationScopeStoragePrefix() {
+  return SCOPE_STORAGE_KEY_PREFIX;
 }
