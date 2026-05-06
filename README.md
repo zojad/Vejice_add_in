@@ -1,175 +1,182 @@
-# Vejice - Comma Checker for Microsoft Word
+# Vejice Word Add-in
 
-A Word add-in for Slovenian comma checking (missing commas and incorrect comma placement).
+A Microsoft Word add-in for reviewing Slovenian comma placement.
 
-Supported on:
-- Word Desktop (Windows and Mac)
-- Word Online (Microsoft 365)
-- Linux is supported for Word Online testing only (Word Desktop flow is not available on Linux).
+This fork is rebuilt to be safer and easier to evaluate:
 
-## Test On Your Device
+- safe-by-default service configuration
+- no committed local env state
+- explicit separation between mock, trusted remote, and unsafe legacy services
+- basic automated tests for pure logic
 
-Prerequisites:
-- Node.js 18+ (Node 20 LTS recommended)
-- npm
-- Git
-- Microsoft Word Desktop and/or Word Online account
+## Current scope
 
-1. Clone and install:
+The add-in can run in two modes:
 
-```bash
-git clone https://github.com/zojad/Vejice_add_in.git
-cd Vejice_add_in
-npm install
-```
+- `mock` mode: default, no document text leaves the add-in
+- `remote` mode: opt-in, for either a trusted internal API or the legacy unsafe API
 
-2. If `.env` is missing, create it from the template:
+For anchoring, the default is `synthetic` mode, which avoids the remote lemmatizer unless you explicitly enable it.
 
-PowerShell:
-```powershell
-Copy-Item .env.example .env
-```
+## Safety model
 
-macOS/Linux:
-```bash
-cp .env.example .env
-```
+This repo assumes the existing external comma-correction API and lemmatizer may be unsafe.
 
-3. Review and update `.env` as needed.
+Because of that:
 
-Real API mode:
+- `VEJICE_CORRECTION_PROVIDER=mock` is the default
+- `VEJICE_LEMMATIZER_PROVIDER=synthetic` is the default
+- remote correction is blocked unless you mark it trusted or explicitly allow the unsafe legacy API
+- remote lemmatization is blocked unless you mark it trusted or explicitly allow the unsafe legacy lemmatizer
+
+Examples:
+
+Trusted internal correction API:
+
 ```env
-VEJICE_API_KEY=your-api-key
-VEJICE_USE_MOCK=false
+VEJICE_CORRECTION_PROVIDER=remote
+VEJICE_REMOTE_CORRECTION_TRUSTED=true
+VEJICE_API_URL=https://your-domain.example/api/postavi_vejice
+```
+
+Unsafe legacy correction API:
+
+```env
+VEJICE_CORRECTION_PROVIDER=remote
+VEJICE_ALLOW_UNSAFE_REMOTE_API=true
 VEJICE_API_URL=https://127.0.0.1:4001/api/postavi_vejice
+VEJICE_API_KEY=replace-me
+```
+
+Trusted internal lemmatizer:
+
+```env
+VEJICE_LEMMATIZER_PROVIDER=remote
+VEJICE_REMOTE_LEMMATIZER_TRUSTED=true
+VEJICE_LEMMAS_URL=https://your-domain.example/lemmas
+```
+
+Unsafe legacy lemmatizer:
+
+```env
+VEJICE_LEMMATIZER_PROVIDER=remote
+VEJICE_ALLOW_UNSAFE_LEMMATIZER=true
 VEJICE_LEMMAS_URL=https://127.0.0.1:4001/lemmas
 ```
 
-No API key (local mock smoke test):
-```env
-VEJICE_USE_MOCK=true
+## Prerequisites
+
+- Node.js 20+
+- npm
+- Microsoft Word Desktop or Word Online
+
+## Setup
+
+1. Install dependencies:
+
+```bash
+npm install
 ```
 
-4. Install local HTTPS certificates:
+2. Internal testing can run with no local secrets and no remote services. You can start immediately with the built-in safe defaults.
+
+3. Optional: create a local config file only if you want to override the defaults:
+
+```bash
+cp .env.example .env.local
+```
+
+4. Keep the safe defaults unless you intentionally want remote services.
+
+5. If you want Office/browser trust to be installed system-wide, install Office dev certificates manually:
 
 ```bash
 npx office-addin-dev-certs install
 ```
 
-5. Start local services (dev server + both proxies):
+If you skip this step, the dev server will still start with a local self-signed HTTPS certificate and you can trust it manually for Word Online testing.
+
+## Internal testing
+
+Fastest safe path:
+
+```bash
+npm run start:internal
+```
+
+This starts only the HTTPS dev server in mock mode. No document text leaves the add-in.
+
+If you want the full local stack for later remote-service testing, start the dev server and local proxies:
 
 ```bash
 npm run start:web:manual
 ```
 
-Keep this terminal running.
-
-## Desktop Word Test Flow
-
-**Requires Word Desktop on Windows or macOS. If you are on Linux, use the Word Online Test Flow below.**
-
-1. In a second terminal (same repo), run:
+Desktop Word:
 
 ```bash
 npm start
 ```
 
-2. Word opens with the add-in sideloaded.
-3. Open any document with Slovenian text.
-4. Go to `Home tab -> CJVT Vejice` and open the task pane.
-5. Click `Preveri vejice`.
-
-## Word Online Test Flow (Manual Sideload)
-
-Before testing, import/trust the generated dev certificate in the browser/environment you use for Word Online.
+Word Online:
 
 1. Keep `npm run start:web:manual` running.
 2. Open Word Online.
-3. Upload manifest: `Insert -> Add-ins -> My add-ins -> Upload my add-in`.
-4. Select `docs/manifest.web.xml`.
-5. Open the add-in and run `Preveri vejice`.
+3. Upload `docs/manifest.web.xml`.
+4. Open the add-in and run the checker.
 
-Alternative automatic web debugging:
+## Verification
+
+Run the internal submission checks:
+
 ```bash
-npm run start:web
+npm run verify:internal
 ```
 
-## Stop Commands
+Additional helper:
 
-- Stop Desktop debugging:
 ```bash
-npm run stop
+npm run check:encoding
 ```
-- Stop Web debugging (if you used `npm run start:web`):
-```bash
-npm run stop:web
-```
-- Stop manual dev services (`start:web:manual`): `Ctrl+C` in that terminal.
 
-## Available Commands
+## Scripts
 
 | Command | Purpose |
-|---------|---------|
-| `npm install` | Install dependencies |
-| `npm run build:dev` | Development build with sourcemaps |
-| `npm run build` | Production build (minified) |
-| `npm run watch` | Watch for file changes and rebuild |
+| --- | --- |
+| `npm test` | Run unit tests for pure logic and service config |
+| `npm run build` | Production build |
+| `npm run build:dev` | Development build |
+| `npm run watch` | Watch mode |
 | `npm run dev-server` | Start webpack dev server only |
-| `npm start` | Sideload in Word Desktop |
-| `npm run start:web:manual` | Start dev server + `proxy:lemmas` + `proxy:vejice` |
-| `npm run start:web` | Automatic Word Online debugging |
-| `npm run stop` | Stop Word Desktop debugging |
-| `npm run stop:web` | Stop Word Online debugging |
-| `npm run validate` | Validate `docs/manifest.dev.xml` |
-| `npm run validate:web` | Validate `docs/manifest.web.xml` |
-| `npm run validate:prod` | Validate `docs/manifest.prod.xml` |
-| `npm run validate:web:prod` | Validate `docs/manifest.web.prod.xml` |
-| `npm run lint:fix` | Fix code style issues |
+| `npm run start:internal` | Start the add-in in safe mock mode for internal testing |
+| `npm start` | Sideload into desktop Word |
+| `npm run start:web` | Start automatic web debugging |
+| `npm run start:web:manual` | Start local dev server and proxies |
+| `npm run stop` | Stop desktop debugging |
+| `npm run stop:web` | Stop web debugging |
+| `npm run validate` | Validate desktop manifest |
+| `npm run validate:web` | Validate web manifest |
+| `npm run verify:internal` | Run tests, encoding check, build, and manifest validation |
+| `npm run lint` | Run Office add-in lint checks |
+| `npm run lint:fix` | Apply lint fixes |
+| `npm run check:encoding` | Scan source files for mojibake and oversized lines |
 
-## What Affects Scan Quality
+## Repo notes
 
-- Offline/API availability and retries: Temporary API/network instability can reduce analyzed chunks and therefore total suggestion quality.
-- Host/runtime behavior: `context.sync` timing, range resolution drift, and Office host performance can affect application reliability.
-- Paragraph/chunk segmentation: Long or structurally dense paragraphs can produce weaker chunk-level results than standalone paragraph checks.
-- Complex formatting in Word: Lists/bullets, tables, unusual Unicode punctuation, and mixed styles can reduce anchor precision.
-- Ambiguous anchor resolution: If token-pair boundaries are unclear, strict insert/delete guards skip ops to avoid wrong edits.
+- `.env` and `.env.local` are intentionally ignored and should stay local.
+- `docs/` is used as the web build output for the add-in.
+- `dist/` is not part of the intended tracked source workflow anymore.
 
-## Troubleshooting
+## Next step if you replace the unsafe API
 
-Certificate issues:
+If you later build a safe internal correction API, you should only need to:
 
-```bash
-npx office-addin-dev-certs uninstall
-npx office-addin-dev-certs install
-```
+1. point `VEJICE_API_URL` at the new endpoint
+2. set `VEJICE_CORRECTION_PROVIDER=remote`
+3. set `VEJICE_REMOTE_CORRECTION_TRUSTED=true`
 
-- For Word Online testing, import/trust the generated dev certificate in the browser/environment you are using.
-- Do this even if no browser warning is shown; add-ins can fail with a generic load error when the certificate is not trusted correctly.
+If you also replace the lemmatizer, do the equivalent with:
 
-Cannot connect to `https://localhost:4001`:
-- Make sure `npm run start:web:manual` is running.
-- Confirm port `4001` is not blocked by firewall or another process.
-
-API errors (`403`, timeout):
-- Verify `VEJICE_API_KEY` in `.env`.
-- Ensure both proxies are running (included in `start:web:manual`).
-- For smoke testing without credentials, set `VEJICE_USE_MOCK=true`.
-
-Add-in not loading:
-- Re-upload `docs/manifest.web.xml` (Word Online).
-- Run manifest validation:
-```bash
-npm run validate
-npm run validate:web
-```
-- Check browser/Office console logs.
-
-## Building For Production
-
-```bash
-npm run build
-```
-
-Update `docs/manifest.prod.xml` and `docs/manifest.web.prod.xml` with your production domain, then deploy `docs/`.
-
-## License
+1. `VEJICE_LEMMAS_URL`
+2. `VEJICE_LEMMATIZER_PROVIDER=remote`
+3. `VEJICE_REMOTE_LEMMATIZER_TRUSTED=true`

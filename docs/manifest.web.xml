@@ -7,7 +7,7 @@
   xsi:type="TaskPaneApp">
 
   <Id>8d54d3a0-2f41-4f9b-90c9-6010f5aa76b2</Id>
-  <Version>1.0.0.3</Version>
+  <Version>1.0.1.0</Version>
   <ProviderName>Vejice</ProviderName>
   <DefaultLocale>sl-SI</DefaultLocale>
   <DisplayName DefaultValue="Vejice"/>
@@ -94,8 +94,8 @@
       </bt:Images>
 
       <bt:Urls>
-        <bt:Url id="Commands.Url" DefaultValue="https://localhost:4001/commands.html?v=20260207a"/>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:4001/taskpane.html?v=20260501b&amp;mode=web"/>
+        <bt:Url id="Commands.Url" DefaultValue="https://localhost:4001/commands.html?v=20260506internal1"/>
+        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:4001/taskpane.html?v=20260506internal1&amp;mode=web"/>
       </bt:Urls>
 
       <bt:ShortStrings>

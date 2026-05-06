@@ -17,8 +17,100 @@
 
     <!-- optional: avoid favicon 404 -->
     <link rel="icon" href="assets/icon-32.png" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background: #f5f7fa;
+        color: #1f2937;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        box-sizing: border-box;
+      }
+
+      .commands-card {
+        width: min(640px, 100%);
+        background: #fff;
+        border: 1px solid #d7dde5;
+        border-radius: 14px;
+        box-shadow: 0 14px 40px rgba(15, 23, 42, 0.08);
+        padding: 24px;
+      }
+
+      .commands-card h1 {
+        margin: 0 0 10px;
+        font-size: 24px;
+      }
+
+      .commands-card p {
+        margin: 0 0 12px;
+        line-height: 1.5;
+      }
+
+      .commands-links {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        margin-top: 16px;
+      }
+
+      .commands-link {
+        display: inline-block;
+        padding: 10px 14px;
+        border-radius: 8px;
+        text-decoration: none;
+        font-weight: 600;
+      }
+
+      .commands-link-primary {
+        background: #d92d20;
+        color: #fff;
+      }
+
+      .commands-link-secondary {
+        background: #eef2f7;
+        color: #1f2937;
+      }
+
+      .commands-note {
+        margin-top: 18px;
+        font-size: 13px;
+        color: #5b6472;
+      }
+    </style>
   </head>
   <body>
+    <main class="commands-card">
+      <h1>Vejice Command Page</h1>
+      <p>
+        This page powers Word ribbon commands in the background. If your browser opened this page,
+        the add-in is not broken. You are just looking at the command host instead of the visible
+        task pane.
+      </p>
+      <p>
+        For internal testing in a normal browser, open the task pane page below or sideload the
+        manifest into Word Online.
+      </p>
+      <div class="commands-links">
+        <a class="commands-link commands-link-primary" href="taskpane.html?mode=web">
+          Open Task Pane
+        </a>
+        <a class="commands-link commands-link-secondary" href="index.html">
+          Open Dev Landing Page
+        </a>
+      </div>
+      <p class="commands-note">
+        If you are testing inside Word, you can ignore this page. The command runtime is expected to
+        be mostly invisible.
+      </p>
+    </main>
     <!-- No script tags for ../logic/*.js or ../api/*.js !!!
          Webpack will inject polyfill.js and commands.js for you. -->
   </body>

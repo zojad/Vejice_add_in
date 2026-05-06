@@ -3,9 +3,9 @@
 
 const path = require("path");
 const webpack = require("webpack");
-const devCerts = require("office-addin-dev-certs");
 const CopyWebpackPlugin = require("copy-webpack-plugin");
 const HtmlWebpackPlugin = require("html-webpack-plugin");
+const { getLocalHttpsOptions } = require("./scripts/https-options");
 require("dotenv").config({ path: path.resolve(__dirname, ".env") });
 require("dotenv").config({ path: path.resolve(__dirname, ".env.local"), override: true });
 
@@ -14,8 +14,13 @@ const urlDev = "https://localhost:4001/";
 const urlProd = "https://zojad.github.io/vejice_1/";
 
 async function getHttpsOptions() {
-  const httpsOptions = await devCerts.getHttpsServerOptions();
-  return { ca: httpsOptions.ca, key: httpsOptions.key, cert: httpsOptions.cert };
+  const { source, options } = getLocalHttpsOptions();
+  if (source === "generated-self-signed") {
+    console.log(
+      "[webpack] Using generated self-signed localhost certificate. Trust it manually if Word Online blocks the add-in."
+    );
+  }
+  return options;
 }
 
 function parseBuildBooleanFlag(value, fallback = false) {
@@ -90,6 +95,11 @@ module.exports = async (env, options) => {
     },
     plugins: [
       new HtmlWebpackPlugin({
+        filename: "index.html",
+        template: "./src/dev-index.html",
+        inject: false,
+      }),
+      new HtmlWebpackPlugin({
         filename: "commands.html",
         template: "./src/commands/commands.html",
         chunks: ["runtime", "polyfill", "common", "commands"],
@@ -120,9 +130,27 @@ module.exports = async (env, options) => {
         __VEJICE_BUILD_CHECK_MAX_REPEATED_PROGRESS__: JSON.stringify(
           process.env.VEJICE_CHECK_MAX_REPEATED_PROGRESS || ""
         ),
+        "process.env.VEJICE_CORRECTION_PROVIDER": JSON.stringify(
+          process.env.VEJICE_CORRECTION_PROVIDER || ""
+        ),
+        "process.env.VEJICE_REMOTE_CORRECTION_TRUSTED": JSON.stringify(
+          process.env.VEJICE_REMOTE_CORRECTION_TRUSTED || ""
+        ),
+        "process.env.VEJICE_ALLOW_UNSAFE_REMOTE_API": JSON.stringify(
+          process.env.VEJICE_ALLOW_UNSAFE_REMOTE_API || ""
+        ),
         "process.env.VEJICE_API_URL": JSON.stringify(process.env.VEJICE_API_URL || ""),
         "process.env.VEJICE_USE_MOCK": JSON.stringify(process.env.VEJICE_USE_MOCK || ""),
         "process.env.VEJICE_USE_LEMMATIZER": JSON.stringify(process.env.VEJICE_USE_LEMMATIZER || ""),
+        "process.env.VEJICE_LEMMATIZER_PROVIDER": JSON.stringify(
+          process.env.VEJICE_LEMMATIZER_PROVIDER || ""
+        ),
+        "process.env.VEJICE_REMOTE_LEMMATIZER_TRUSTED": JSON.stringify(
+          process.env.VEJICE_REMOTE_LEMMATIZER_TRUSTED || ""
+        ),
+        "process.env.VEJICE_ALLOW_UNSAFE_LEMMATIZER": JSON.stringify(
+          process.env.VEJICE_ALLOW_UNSAFE_LEMMATIZER || ""
+        ),
         "process.env.VEJICE_DISABLE_PARAGRAPH_CACHE": JSON.stringify(
           process.env.VEJICE_DISABLE_PARAGRAPH_CACHE || ""
         ),
@@ -219,7 +247,7 @@ module.exports = async (env, options) => {
         "Access-Control-Allow-Origin": "*",
         "Access-Control-Allow-Methods": "GET,POST,PUT,DELETE,OPTIONS",
         "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Requested-With",
-        "Access-Control-Allow-Credentials": "true",
+        "Access-Control-Allow-Credentials": "false",
         // Required for Chrome’s Private Network Access (public -> localhost)
         "Access-Control-Allow-Private-Network": "true",
       },
