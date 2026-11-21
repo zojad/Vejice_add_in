@@ -9,7 +9,8 @@ require("dotenv").config();
 
 const PORT = Number(process.env.LEMMAS_PROXY_PORT || process.env.PORT || 5050);
 const TARGET_URL =
-  process.env.LEMMAS_PROXY_TARGET_URL || process.env.VEJICE_LEMMAS_URL || "";
+  process.env.LEMMAS_PROXY_TARGET_URL ||
+  "http://46.101.236.89:8010/nlp/analyze";
 const TIMEOUT = Number(process.env.LEMMAS_PROXY_TIMEOUT_MS || 10000);
 const BODY_LIMIT_BYTES = Number(process.env.LEMMAS_PROXY_BODY_LIMIT_BYTES || 256 * 1024);
 const API_KEY = process.env.LEMMAS_PROXY_TARGET_API_KEY || process.env.VEJICE_API_KEY || "";

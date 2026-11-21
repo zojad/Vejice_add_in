@@ -69,7 +69,7 @@ function resolveDefaultEndpoint() {
       : "";
   if (envEndpoint) return envEndpoint;
 
-  return "https://lemmas-vejice.com/lemmas";
+  return "/lemmas";
 }
 
 function isWordOnlineHost() {

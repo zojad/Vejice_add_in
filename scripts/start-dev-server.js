@@ -1,9 +1,17 @@
 #!/usr/bin/env node
 /* eslint-disable no-console */
 const { spawn } = require("child_process");
+const path = require("path");
 
-const command = process.platform === "win32" ? "npx.cmd" : "npx";
-const args = ["webpack", "serve", "--mode", "development"];
+// Launch the installed webpack CLI with Node directly. Spawning npx.cmd fails
+// with EINVAL under recent Node versions on Windows.
+const command = process.execPath;
+const args = [
+  path.resolve(__dirname, "..", "node_modules", "webpack", "bin", "webpack.js"),
+  "serve",
+  "--mode",
+  "development",
+];
 
 let sawAddrInUse = false;
 

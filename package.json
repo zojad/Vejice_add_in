@@ -6,11 +6,6 @@
     "url": "https://github.com/OfficeDev/Office-Addin-TaskPane-JS.git"
   },
   "license": "MIT",
-  "config": {
-    "app_to_debug": "word",
-    "app_type_to_debug": "desktop",
-    "dev_server_port": 4001
-  },
   "scripts": {
     "build": "webpack --mode production",
     "build:dev": "webpack --mode development",
