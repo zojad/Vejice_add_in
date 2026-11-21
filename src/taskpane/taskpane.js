@@ -16,6 +16,7 @@ import {
   RUNTIME_STATE_EVENT_NAME,
   RUNTIME_STATE_STORAGE_KEY,
 } from "../logic/preveriVejice.js";
+import { describeInternalTestingMode } from "../config/serviceConfig.js";
 import { isWordOnline } from "../utils/host.js";
 import {
   readTaskpaneNotifications,
@@ -261,6 +262,8 @@ if (typeof window !== "undefined") {
 
 let busy = false;
 let online = false;
+let browserPreviewMode = false;
+let taskpaneInitialized = false;
 let checkRunInFlight = false;
 let checkStopRequested = false;
 let currentSuggestionIndex = 0;
@@ -275,6 +278,13 @@ const CHECK_GENERIC_ERROR_MESSAGE = "Napaka. Poskusite \u0161e enkrat.";
 const CHECK_OFFLINE_HINT_MESSAGE = "Preverite internetno povezavo.";
 const TASKPANE_SUBTITLE_WEB = "Preverite postavitev vejic v dokumentu.";
 const TASKPANE_SUBTITLE_DESKTOP = "Vejice urejate s Sledi spremembam.";
+const TASKPANE_SUBTITLE_PREVIEW = "Predogled v brskalniku brez Word gostitelja.";
+const TASKPANE_STATUS_TEST_MODE_PREFIX = "Način:";
+const TASKPANE_BROWSER_PREVIEW_MESSAGE =
+  "Predogled v brskalniku. Za pravo preverjanje dokumenta naložite dodatek v Word.";
+const TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE =
+  "Ta gumb je v predogledu onemogočen. Za preverjanje dokumenta odprite dodatek v Wordu.";
+const STANDALONE_PREVIEW_BOOT_TIMEOUT_MS = 1200;
 const UI_REFRESH_DEBOUNCE_MS = 120;
 let uiRefreshTimerId = null;
 let pendingUiRefresh = {
@@ -365,6 +375,13 @@ const setStatus = (message) => {
   if (statusLine) statusLine.textContent = message;
 };
 
+const revealTaskpaneShell = () => {
+  const sideload = document.getElementById("sideload-msg");
+  const appBody = document.getElementById("app-body");
+  if (sideload) sideload.style.display = "none";
+  if (appBody) appBody.style.display = "flex";
+};
+
 const readRuntimeStateSnapshot = () => {
   if (typeof window === "undefined") return null;
   try {
@@ -451,6 +468,18 @@ const syncActionButtons = () => {
   const hasPending = pendingCount > 0;
 
   syncStatusLoadingIndicator();
+  if (browserPreviewMode) {
+    if (checkBtn) {
+      checkBtn.disabled = false;
+      checkBtn.textContent = "Predogled v brskalniku";
+    }
+    if (clearHighlightsBtn) clearHighlightsBtn.disabled = true;
+    if (acceptOneBtn) acceptOneBtn.disabled = true;
+    if (rejectOneBtn) rejectOneBtn.disabled = true;
+    if (acceptBtn) acceptBtn.disabled = true;
+    if (rejectBtn) rejectBtn.disabled = true;
+    return;
+  }
   if (checkBtn) {
     checkBtn.disabled = busy && !checkActive;
     checkBtn.textContent = checkActive ? "Ustavi preverjanje" : "Preveri vejice";
@@ -543,6 +572,15 @@ const scheduleUiRefresh = ({ forceNotifications = false, includePendingStatus = 
 };
 
 const runCheck = async () => {
+  if (browserPreviewMode) {
+    setStatus(TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE);
+    publishTaskpaneNotifications([TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE], {
+      source: "browser-preview",
+      level: "info",
+    });
+    scheduleUiRefresh({ forceNotifications: true, immediate: true });
+    return;
+  }
   const checkInProgress = isDocumentCheckInProgress();
   const checkActive = Boolean(checkRunInFlight || checkInProgress);
   if (checkActive) {
@@ -729,6 +767,10 @@ const runCheck = async () => {
 };
 
 const runClearHighlights = async () => {
+  if (browserPreviewMode) {
+    setStatus(TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE);
+    return;
+  }
   if (!online) return;
   if (busy || isDocumentCheckInProgress()) {
     setStatus("Po\u010dakajte, da se preverjanje kon\u010da.");
@@ -768,6 +810,10 @@ const runClearHighlights = async () => {
 };
 
 const runAccept = async () => {
+  if (browserPreviewMode) {
+    setStatus(TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE);
+    return;
+  }
   if (!canUseOnlineReviewActions()) return;
   if (busy || isDocumentCheckInProgress()) {
     setStatus("Po\u010dakajte, da se preverjanje kon\u010da.");
@@ -790,6 +836,10 @@ const runAccept = async () => {
 };
 
 const runReject = async () => {
+  if (browserPreviewMode) {
+    setStatus(TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE);
+    return;
+  }
   if (!canUseOnlineReviewActions()) return;
   if (busy || isDocumentCheckInProgress()) {
     setStatus("Po\u010dakajte, da se preverjanje kon\u010da.");
@@ -817,6 +867,10 @@ const runReject = async () => {
 };
 
 const runAcceptOne = async () => {
+  if (browserPreviewMode) {
+    setStatus(TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE);
+    return;
+  }
   if (!canUseOnlineReviewActions()) return;
   if (busy || isDocumentCheckInProgress()) {
     setStatus("Pocakajte, da se preverjanje konca.");
@@ -862,6 +916,10 @@ const runAcceptOne = async () => {
   }
 };
 const runRejectOne = async () => {
+  if (browserPreviewMode) {
+    setStatus(TASKPANE_BROWSER_PREVIEW_ACTION_MESSAGE);
+    return;
+  }
   if (!canUseOnlineReviewActions()) return;
   if (busy || isDocumentCheckInProgress()) {
     setStatus("Pocakajte, da se preverjanje konca.");
@@ -905,24 +963,25 @@ const runRejectOne = async () => {
     setBusy(false);
   }
 };
-Office.onReady(async (info) => {
-  if (info.host !== Office.HostType.Word) return;
-
-  const sideload = document.getElementById("sideload-msg");
-  const appBody = document.getElementById("app-body");
-  if (sideload) sideload.style.display = "none";
-  if (appBody) appBody.style.display = "flex";
-
+const initializeTaskpane = async ({ hostInfo = null, preview = false, previewReason = "" } = {}) => {
+  if (taskpaneInitialized) return;
+  taskpaneInitialized = true;
+  browserPreviewMode = Boolean(preview);
+  revealTaskpaneShell();
   const mode = resolveManifestMode();
-  online = mode ? mode === "web" : isWordOnline();
+  online = preview ? (mode ? mode === "web" : true) : mode ? mode === "web" : isWordOnline();
   log("taskpane:ready", {
-    host: info.host,
+    host: hostInfo?.host || "browser-preview",
     platform: Office?.context?.platform,
     mode,
     online,
+    preview,
+    previewReason,
     href: typeof window !== "undefined" ? window.location.href : "",
   });
-  const notificationScope = await resolveDocumentNotificationScope();
+  const notificationScope = preview
+    ? `browser-preview:${mode || "default"}`
+    : await resolveDocumentNotificationScope();
   setTaskpaneNotificationScope(notificationScope);
   log("taskpane:notification-scope", { notificationScope });
   // Notifications are persisted in localStorage and can leak across documents.
@@ -943,10 +1002,25 @@ Office.onReady(async (info) => {
   const rejectOneBtn = document.getElementById("btn-reject-one");
   const secondaryActions = document.getElementById("secondary-actions");
   const taskpaneSubtitle = document.getElementById("taskpane-subtitle");
-  const showOnlineReviewActions = canUseOnlineReviewActions();
+  const showOnlineReviewActions = !preview && canUseOnlineReviewActions();
 
   if (taskpaneSubtitle) {
-    taskpaneSubtitle.textContent = online ? TASKPANE_SUBTITLE_WEB : TASKPANE_SUBTITLE_DESKTOP;
+    taskpaneSubtitle.textContent = preview
+      ? TASKPANE_SUBTITLE_PREVIEW
+      : online
+        ? TASKPANE_SUBTITLE_WEB
+        : TASKPANE_SUBTITLE_DESKTOP;
+  }
+  setStatus(
+    preview
+      ? `${TASKPANE_BROWSER_PREVIEW_MESSAGE} ${TASKPANE_STATUS_TEST_MODE_PREFIX} ${describeInternalTestingMode()}.`
+      : `${TASKPANE_STATUS_TEST_MODE_PREFIX} ${describeInternalTestingMode()}`
+  );
+  if (preview) {
+    publishTaskpaneNotifications([TASKPANE_BROWSER_PREVIEW_MESSAGE], {
+      source: "browser-preview",
+      level: "info",
+    });
   }
 
   if (!showOnlineReviewActions) {
@@ -1020,4 +1094,32 @@ Office.onReady(async (info) => {
     includePendingStatus: true,
     immediate: true,
   });
-});
+};
+
+const bootStandalonePreviewIfNeeded = (reason) => {
+  initializeTaskpane({
+    preview: true,
+    previewReason: reason,
+  }).catch((error) => {
+    reportStartupError("browser-preview-init", error);
+  });
+};
+
+if (typeof Office !== "undefined" && typeof Office.onReady === "function") {
+  Office.onReady((info) => {
+    if (info?.host !== Office.HostType.Word) {
+      void bootStandalonePreviewIfNeeded(`host:${info?.host || "unknown"}`);
+      return;
+    }
+    void initializeTaskpane({ hostInfo: info });
+  });
+} else {
+  void bootStandalonePreviewIfNeeded("office-js-unavailable");
+}
+
+if (typeof window !== "undefined") {
+  window.setTimeout(() => {
+    if (taskpaneInitialized) return;
+    void bootStandalonePreviewIfNeeded("office-onready-timeout");
+  }, STANDALONE_PREVIEW_BOOT_TIMEOUT_MS);
+}

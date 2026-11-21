@@ -1,5 +1,9 @@
 /* global Word, window, process, performance, console, Office, URL, navigator, __VEJICE_BUILD_QUIET_LOGS__, __VEJICE_BUILD_ERROR_LOGS__, __VEJICE_BUILD_ONLINE_VERBOSE_LOGS__, __VEJICE_BUILD_ONLINE_DRIFT_LOGS__, __VEJICE_BUILD_DEBUG__, __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__ */
 import { popraviPoved, popraviPovedDetailed } from "../api/apiVejice.js";
+import {
+  explainLemmatizerServiceDecision,
+  resolveLemmatizerServiceDecision,
+} from "../config/serviceConfig.js";
 import { isWordOnline } from "../utils/host.js";
 import { CommaSuggestionEngine } from "./engine/CommaSuggestionEngine.js";
 import { SyntheticAnchorProvider } from "./anchoring/SyntheticAnchorProvider.js";
@@ -762,6 +766,7 @@ function isParagraphCacheDisabled() {
 }
 
 function shouldUseLemmatizerAnchors() {
+  const lemmatizerService = resolveLemmatizerServiceDecision();
   if (typeof window !== "undefined") {
     if (typeof window.__VEJICE_LEMMAS_URL === "string" && window.__VEJICE_LEMMAS_URL) {
       log("Lemmas endpoint override via window:", window.__VEJICE_LEMMAS_URL);
@@ -772,20 +777,19 @@ function shouldUseLemmatizerAnchors() {
     ) {
       log("Lemmas timeout override via window:", window.__VEJICE_LEMMAS_TIMEOUT_MS);
     }
-    const override = parseBooleanFlag(window.__VEJICE_USE_LEMMATIZER__);
-    if (typeof override === "boolean") return override;
   }
   if (typeof process !== "undefined") {
-    const envValue =
-      parseBooleanFlag(process.env?.VEJICE_USE_LEMMATIZER) ??
-      parseBooleanFlag(process.env?.VEJICE_LEMMATIZER_ANCHORS);
-    if (typeof envValue === "boolean") return envValue;
     if (process.env?.VEJICE_LEMMAS_URL) {
       log("Lemmas endpoint override via env:", process.env.VEJICE_LEMMAS_URL);
     }
     if (process.env?.VEJICE_LEMMAS_TIMEOUT_MS) {
       log("Lemmas timeout override via env:", process.env.VEJICE_LEMMAS_TIMEOUT_MS);
     }
+  }
+  if (lemmatizerService.provider !== "remote") return false;
+  if (!lemmatizerService.isAllowed) {
+    warn(explainLemmatizerServiceDecision(lemmatizerService), lemmatizerService);
+    return false;
   }
   return true;
 }

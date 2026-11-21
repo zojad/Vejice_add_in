@@ -8,12 +8,13 @@ const axios = require("axios");
 require("dotenv").config();
 
 const PORT = Number(process.env.VEJICE_PROXY_PORT || process.env.PORT || 5051);
-const TARGET_URL =
-  process.env.VEJICE_PROXY_TARGET_URL || "https://gpu-proc1.cjvt.si/popravljalnik-api/postavi_vejice";
+const HOST = process.env.VEJICE_PROXY_HOST || "127.0.0.1";
+const TARGET_URL = process.env.VEJICE_PROXY_TARGET_URL || "";
 const TIMEOUT = Number(process.env.VEJICE_PROXY_TIMEOUT_MS || 15000);
 const BODY_LIMIT_BYTES = Number(process.env.VEJICE_PROXY_BODY_LIMIT_BYTES || 256 * 1024);
 const API_KEY = process.env.VEJICE_PROXY_TARGET_API_KEY || process.env.VEJICE_API_KEY || "";
-const allowedOriginsRaw = process.env.VEJICE_PROXY_ALLOWED_ORIGINS || "*";
+const allowedOriginsRaw =
+  process.env.VEJICE_PROXY_ALLOWED_ORIGINS || "https://127.0.0.1:4001,https://localhost:4001";
 const allowedOrigins = allowedOriginsRaw
   .split(",")
   .map((value) => value.trim())
@@ -71,6 +72,11 @@ function readRequestBody(req) {
 }
 
 async function forwardRequest(body) {
+  if (!TARGET_URL) {
+    const error = new Error("Vejice proxy target URL is not configured");
+    error.status = 500;
+    throw error;
+  }
   if (!API_KEY) {
     const error = new Error("Vejice proxy API key is not configured");
     error.status = 500;
@@ -224,9 +230,9 @@ server.on("error", (err) => {
   console.error("[vejice-api-proxy] Server error:", err.message);
   process.exit(1);
 });
-server.listen(PORT, () => {
-  console.log(`[vejice-api-proxy] Listening on port ${PORT}`);
-  console.log(`[vejice-api-proxy] Forwarding to configured upstream`);
+server.listen(PORT, HOST, () => {
+  console.log(`[vejice-api-proxy] Listening on ${HOST}:${PORT}`);
+  console.log(`[vejice-api-proxy] Forwarding to ${TARGET_URL || "<not-configured>"}`);
   if (!ALLOW_ALL_ORIGINS) {
     console.log(`[vejice-api-proxy] Allowed origins: ${allowedOrigins.join(", ")}`);
   }

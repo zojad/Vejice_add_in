@@ -1,6 +1,10 @@
 /* global window, process, performance, console, setTimeout, navigator */
 // src/api/apiVejice.js
 import axios from "axios";
+import {
+  explainCorrectionServiceDecision,
+  resolveCorrectionServiceDecision,
+} from "../config/serviceConfig.js";
 import { isWordOnline } from "../utils/host.js";
 
 const envIsProd = () =>
@@ -188,19 +192,6 @@ function isBrowserOffline() {
   } catch (_err) {
     return false;
   }
-}
-
-const envMockFlag =
-  typeof process !== "undefined" ? boolFromString(process.env?.VEJICE_USE_MOCK ?? "") : undefined;
-const winMockFlag =
-  typeof window !== "undefined" && typeof window.__VEJICE_USE_MOCK__ === "boolean"
-    ? window.__VEJICE_USE_MOCK__
-    : undefined;
-let USE_MOCK = false;
-if (typeof winMockFlag === "boolean") {
-  USE_MOCK = winMockFlag;
-} else if (typeof envMockFlag === "boolean") {
-  USE_MOCK = envMockFlag;
 }
 
 export class VejiceApiError extends Error {
@@ -1892,7 +1883,15 @@ function buildOgCompatPayloads(sentence) {
 }
 
 async function requestPopravek(poved, options = {}) {
-  if (USE_MOCK) {
+  const correctionService = resolveCorrectionServiceDecision();
+  const useMock = correctionService.provider === "mock";
+  if (!correctionService.isAllowed) {
+    throw new VejiceApiError(explainCorrectionServiceDecision(correctionService), {
+      serviceDecision: correctionService,
+      unsafeRemoteBlocked: true,
+    });
+  }
+  if (useMock) {
     log("Mock API ->", snip(poved));
     return mockRequestPopravljenPoved(poved);
   }
@@ -2048,7 +2047,7 @@ async function requestPopravek(poved, options = {}) {
         status === 408 || status === 429 || status === 502 || status === 503 || status === 504;
       const canTryProtectedDots =
         !protectedRetryUsed &&
-        !USE_MOCK &&
+        !useMock &&
         !primaryPayload.dotProtected &&
         infraRetryStatus &&
         hasProblematicDotPattern(poved);
@@ -2087,7 +2086,7 @@ async function requestPopravek(poved, options = {}) {
       const canTryOgCompat =
         ENABLE_OG_COMPAT_RETRY &&
         !ogCompatRetryUsed &&
-        !USE_MOCK &&
+        !useMock &&
         infraRetryStatus;
       if (canTryOgCompat) {
         ogCompatRetryUsed = true;
@@ -2123,7 +2122,7 @@ async function requestPopravek(poved, options = {}) {
       const canTryNormalizedTransport =
         ENABLE_NORMALIZED_TRANSPORT_RETRY &&
         !normalizedRetryUsed &&
-        !USE_MOCK &&
+        !useMock &&
         infraRetryStatus &&
         hasTransportNormalizationOpportunity(poved);
       if (canTryNormalizedTransport) {

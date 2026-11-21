@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="sl">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1"
+    />
+    <title>Vejice Internal Testing</title>
+    <style>
+      html,
+      body {
+        margin: 0;
+        min-height: 100%;
+        font-family: "Segoe UI", Tahoma, sans-serif;
+        background:
+          radial-gradient(circle at top right, rgba(217, 45, 32, 0.12), transparent 28%),
+          linear-gradient(180deg, #f7f8fb 0%, #eef2f6 100%);
+        color: #17202a;
+      }
+
+      body {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 28px;
+        box-sizing: border-box;
+      }
+
+      .shell {
+        width: min(760px, 100%);
+        background: rgba(255, 255, 255, 0.96);
+        border: 1px solid #d6dce5;
+        border-radius: 18px;
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.12);
+        padding: 28px;
+      }
+
+      h1 {
+        margin: 0 0 10px;
+        font-size: 28px;
+      }
+
+      p {
+        margin: 0 0 14px;
+        line-height: 1.55;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+        margin: 20px 0 22px;
+      }
+
+      .action {
+        display: inline-block;
+        padding: 11px 16px;
+        border-radius: 10px;
+        text-decoration: none;
+        font-weight: 700;
+      }
+
+      .action-primary {
+        background: #d92d20;
+        color: #fff;
+      }
+
+      .action-secondary {
+        background: #eef2f7;
+        color: #17202a;
+      }
+
+      .steps {
+        margin: 0;
+        padding-left: 18px;
+      }
+
+      .steps li {
+        margin: 0 0 8px;
+      }
+
+      .callout {
+        margin-top: 20px;
+        padding: 14px 16px;
+        border-radius: 12px;
+        background: #fff4eb;
+        border: 1px solid #f2c48c;
+      }
+
+      code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        background: #f3f4f6;
+        padding: 1px 5px;
+        border-radius: 5px;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <h1>Vejice Internal Testing</h1>
+      <p>
+        The dev server is running. If you landed on a blank or confusing page before, use the links
+        below.
+      </p>
+      <div class="actions">
+        <a class="action action-primary" href="taskpane.html?mode=web">Open Task Pane</a>
+        <a class="action action-secondary" href="commands.html">Open Command Runtime</a>
+      </div>
+      <ol class="steps">
+        <li>
+          For browser-only smoke testing, open <code>taskpane.html?mode=web</code>.
+        </li>
+        <li>
+          For real add-in testing, upload <code>docs/manifest.web.xml</code> into Word Online.
+        </li>
+        <li>
+          For the safe internal path, keep the default mock mode enabled so no document text leaves
+          the add-in.
+        </li>
+      </ol>
+      <div class="callout">
+        If the browser opens <code>commands.html</code>, that is the ribbon command host. It is not
+        the main UI. Use the task pane link above instead.
+      </div>
+    </main>
+  </body>
+</html>

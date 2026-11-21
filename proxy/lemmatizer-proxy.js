@@ -8,6 +8,7 @@ const axios = require("axios");
 require("dotenv").config();
 
 const PORT = Number(process.env.LEMMAS_PROXY_PORT || process.env.PORT || 5050);
+const HOST = process.env.LEMMAS_PROXY_HOST || "127.0.0.1";
 const TARGET_URL =
   process.env.LEMMAS_PROXY_TARGET_URL || process.env.VEJICE_LEMMAS_URL || "";
 const TIMEOUT = Number(process.env.LEMMAS_PROXY_TIMEOUT_MS || 10000);
@@ -15,7 +16,8 @@ const BODY_LIMIT_BYTES = Number(process.env.LEMMAS_PROXY_BODY_LIMIT_BYTES || 256
 const API_KEY = process.env.LEMMAS_PROXY_TARGET_API_KEY || process.env.VEJICE_API_KEY || "";
 const SHARED_TOKEN = (process.env.LEMMAS_PROXY_SHARED_TOKEN || "").trim();
 const SHARED_TOKEN_HEADER = process.env.LEMMAS_PROXY_SHARED_TOKEN_HEADER || "x-lemmas-token";
-const allowedOriginsRaw = process.env.LEMMAS_PROXY_ALLOWED_ORIGINS || "*";
+const allowedOriginsRaw =
+  process.env.LEMMAS_PROXY_ALLOWED_ORIGINS || "https://127.0.0.1:4001,https://localhost:4001";
 const allowedOrigins = allowedOriginsRaw
   .split(",")
   .map((value) => value.trim())
@@ -254,8 +256,8 @@ server.on("error", (err) => {
   console.error("[lemmatizer-proxy] Server error:", err.message);
   process.exit(1);
 });
-server.listen(PORT, () => {
-  console.log(`[lemmatizer-proxy] Listening on port ${PORT}`);
+server.listen(PORT, HOST, () => {
+  console.log(`[lemmatizer-proxy] Listening on ${HOST}:${PORT}`);
   console.log(`[lemmatizer-proxy] Forwarding to ${TARGET_URL}`);
   if (!ALLOW_ALL_ORIGINS) {
     console.log(`[lemmatizer-proxy] Allowed origins: ${allowedOrigins.join(", ")}`);

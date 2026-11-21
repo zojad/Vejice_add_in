@@ -1,9 +1,10 @@
 {
-  "name": "office-addin-taskpane-js",
-  "version": "0.0.1",
+  "name": "vejice-word-addin",
+  "version": "0.1.0",
+  "private": true,
   "repository": {
     "type": "git",
-    "url": "https://github.com/OfficeDev/Office-Addin-TaskPane-JS.git"
+    "url": "https://github.com/damjan-popic/Vejice_add_in.git"
   },
   "license": "MIT",
   "config": {
@@ -24,6 +25,7 @@
     "start": "office-addin-debugging start docs/manifest.dev.xml",
     "start:web": "office-addin-debugging start docs/manifest.web.xml web",
     "start:web:manual": "npm-run-all -p proxy:lemmas proxy:vejice dev-server",
+    "start:internal": "npm run dev-server",
     "stop": "office-addin-debugging stop docs/manifest.dev.xml",
     "stop:web": "office-addin-debugging stop docs/manifest.web.xml",
     "validate": "office-addin-manifest validate docs/manifest.dev.xml",
@@ -31,6 +33,8 @@
     "validate:prod": "office-addin-manifest validate docs/manifest.prod.xml",
     "validate:web:prod": "office-addin-manifest validate docs/manifest.web.prod.xml",
     "start:all": "npm-run-all -p dev-server start",
+    "test": "node --experimental-default-type=module --test tests/*.test.mjs",
+    "verify:internal": "npm test && npm run check:encoding && npm run build && npm run validate && npm run validate:web",
     "watch": "webpack --mode development --watch",
     "proxy:lemmas": "node proxy/lemmatizer-proxy.js",
     "proxy:vejice": "node proxy/vejice-api-proxy.js"
