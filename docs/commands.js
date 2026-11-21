@@ -285,7 +285,7 @@ if (typeof window !== "undefined" && typeof URLSearchParams !== "undefined") {
     errL("Failed to parse ?mock query param", err);
   }
 }
-var envMockFlag = typeof process !== "undefined" ? boolFromString((_process$env$VEJICE_U = (_process$env2 = process.env) === null || _process$env2 === void 0 ? void 0 : "") !== null && _process$env$VEJICE_U !== void 0 ? _process$env$VEJICE_U : "") : undefined;
+var envMockFlag = typeof process !== "undefined" ? boolFromString((_process$env$VEJICE_U = (_process$env2 = process.env) === null || _process$env2 === void 0 ? void 0 : "false") !== null && _process$env$VEJICE_U !== void 0 ? _process$env$VEJICE_U : "") : undefined;
 var resolvedMock;
 if (typeof queryMockFlag === "boolean") {
   resolvedMock = queryMockFlag;

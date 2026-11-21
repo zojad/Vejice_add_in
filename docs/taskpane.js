@@ -44,11 +44,11 @@ var getBuildNumberFlag = function getBuildNumberFlag(flagName) {
   try {
     switch (flagName) {
       case "checkRunWatchdogMs":
-        return parsePositiveInteger( true ? "" : 0);
+        return parsePositiveInteger( true ? "600000" : 0);
       case "checkMaxPartialPasses":
-        return parsePositiveInteger( true ? "" : 0);
+        return parsePositiveInteger( true ? "1200" : 0);
       case "checkMaxRepeatedProgress":
-        return parsePositiveInteger( true ? "" : 0);
+        return parsePositiveInteger( true ? "40" : 0);
       default:
         return null;
     }
@@ -66,7 +66,7 @@ var resolveCheckRunWatchdogMs = function resolveCheckRunWatchdogMs() {
   }
   if (override == null && typeof process !== "undefined") {
     var _process$env;
-    override = parsePositiveInteger((_process$env = process.env) === null || _process$env === void 0 ? void 0 : "");
+    override = parsePositiveInteger((_process$env = process.env) === null || _process$env === void 0 ? void 0 : "600000");
   }
   return override !== null && override !== void 0 ? override : 420000;
 };
@@ -80,7 +80,7 @@ var resolveCheckMaxPartialPasses = function resolveCheckMaxPartialPasses() {
   }
   if (override == null && typeof process !== "undefined") {
     var _process$env2;
-    override = parsePositiveInteger((_process$env2 = process.env) === null || _process$env2 === void 0 ? void 0 : "");
+    override = parsePositiveInteger((_process$env2 = process.env) === null || _process$env2 === void 0 ? void 0 : "1200");
   }
   return override !== null && override !== void 0 ? override : 1200;
 };
@@ -94,7 +94,7 @@ var resolveCheckMaxRepeatedProgress = function resolveCheckMaxRepeatedProgress()
   }
   if (override == null && typeof process !== "undefined") {
     var _process$env3;
-    override = parsePositiveInteger((_process$env3 = process.env) === null || _process$env3 === void 0 ? void 0 : "");
+    override = parsePositiveInteger((_process$env3 = process.env) === null || _process$env3 === void 0 ? void 0 : "40");
   }
   return override !== null && override !== void 0 ? override : 40;
 };
@@ -102,7 +102,7 @@ var getBuildBooleanFlag = function getBuildBooleanFlag(flagName) {
   try {
     switch (flagName) {
       case "quiet":
-        return  true ? true : 0;
+        return  true ? false : 0;
       case "error":
         return  true ? true : 0;
       case "onlineVerbose":
@@ -128,7 +128,7 @@ var applyBuildDebugFlagsToWindow = function applyBuildDebugFlagsToWindow() {
   var onlineVerbose = getBuildBooleanFlag("onlineVerbose");
   var onlineDrift = getBuildBooleanFlag("onlineDrift");
   var debug = getBuildBooleanFlag("debug");
-  var desktopVerbose = (_getBuildBooleanFlag = getBuildBooleanFlag("desktopVerbose")) !== null && _getBuildBooleanFlag !== void 0 ? _getBuildBooleanFlag : typeof process !== "undefined" ? (_parseBooleanFlag = parseBooleanFlag((_process$env4 = process.env) === null || _process$env4 === void 0 ? void 0 : "")) !== null && _parseBooleanFlag !== void 0 ? _parseBooleanFlag : parseBooleanFlag((_process$env5 = process.env) === null || _process$env5 === void 0 ? void 0 : "") : undefined;
+  var desktopVerbose = (_getBuildBooleanFlag = getBuildBooleanFlag("desktopVerbose")) !== null && _getBuildBooleanFlag !== void 0 ? _getBuildBooleanFlag : typeof process !== "undefined" ? (_parseBooleanFlag = parseBooleanFlag((_process$env4 = process.env) === null || _process$env4 === void 0 ? void 0 : "false")) !== null && _parseBooleanFlag !== void 0 ? _parseBooleanFlag : parseBooleanFlag((_process$env5 = process.env) === null || _process$env5 === void 0 ? void 0 : "false") : undefined;
   if (typeof quiet === "boolean" && typeof window.__VEJICE_QUIET_LOGS__ !== "boolean") {
     window.__VEJICE_QUIET_LOGS__ = quiet;
   }
@@ -162,9 +162,9 @@ var isTaskpaneDebugEnabled = function isTaskpaneDebugEnabled() {
   if (typeof buildDebug === "boolean") return buildDebug;
   if (typeof process !== "undefined") {
     var _process$env6, _process$env7;
-    var envOnlineVerbose = parseBooleanFlag((_process$env6 = process.env) === null || _process$env6 === void 0 ? void 0 : "");
+    var envOnlineVerbose = parseBooleanFlag((_process$env6 = process.env) === null || _process$env6 === void 0 ? void 0 : "false");
     if (typeof envOnlineVerbose === "boolean") return envOnlineVerbose;
-    var envDebug = parseBooleanFlag((_process$env7 = process.env) === null || _process$env7 === void 0 ? void 0 : "");
+    var envDebug = parseBooleanFlag((_process$env7 = process.env) === null || _process$env7 === void 0 ? void 0 : "false");
     if (typeof envDebug === "boolean") return envDebug;
   }
   return false;

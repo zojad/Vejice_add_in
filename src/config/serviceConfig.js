@@ -5,14 +5,56 @@ const BOOLEAN_FALSE = new Set(["0", "false", "no", "off"]);
 const CORRECTION_PROVIDERS = new Set(["mock", "remote"]);
 const LEMMATIZER_PROVIDERS = new Set(["synthetic", "remote"]);
 
-function getRuntime(runtime = {}) {
+function getBuildEnv() {
   return {
-    env:
-      runtime && typeof runtime === "object" && runtime.env
-        ? runtime.env
-        : typeof process !== "undefined" && process?.env
-          ? process.env
-          : {},
+    VEJICE_CORRECTION_PROVIDER:
+      typeof __VEJICE_BUILD_CORRECTION_PROVIDER__ !== "undefined"
+        ? __VEJICE_BUILD_CORRECTION_PROVIDER__
+        : undefined,
+    VEJICE_REMOTE_CORRECTION_TRUSTED:
+      typeof __VEJICE_BUILD_REMOTE_CORRECTION_TRUSTED__ !== "undefined"
+        ? __VEJICE_BUILD_REMOTE_CORRECTION_TRUSTED__
+        : undefined,
+    VEJICE_ALLOW_UNSAFE_REMOTE_API:
+      typeof __VEJICE_BUILD_ALLOW_UNSAFE_REMOTE_API__ !== "undefined"
+        ? __VEJICE_BUILD_ALLOW_UNSAFE_REMOTE_API__
+        : undefined,
+    VEJICE_USE_MOCK:
+      typeof __VEJICE_BUILD_USE_MOCK__ !== "undefined" ? __VEJICE_BUILD_USE_MOCK__ : undefined,
+    VEJICE_LEMMATIZER_PROVIDER:
+      typeof __VEJICE_BUILD_LEMMATIZER_PROVIDER__ !== "undefined"
+        ? __VEJICE_BUILD_LEMMATIZER_PROVIDER__
+        : undefined,
+    VEJICE_REMOTE_LEMMATIZER_TRUSTED:
+      typeof __VEJICE_BUILD_REMOTE_LEMMATIZER_TRUSTED__ !== "undefined"
+        ? __VEJICE_BUILD_REMOTE_LEMMATIZER_TRUSTED__
+        : undefined,
+    VEJICE_ALLOW_UNSAFE_LEMMATIZER:
+      typeof __VEJICE_BUILD_ALLOW_UNSAFE_LEMMATIZER__ !== "undefined"
+        ? __VEJICE_BUILD_ALLOW_UNSAFE_LEMMATIZER__
+        : undefined,
+    VEJICE_USE_LEMMATIZER:
+      typeof __VEJICE_BUILD_USE_LEMMATIZER__ !== "undefined"
+        ? __VEJICE_BUILD_USE_LEMMATIZER__
+        : undefined,
+    VEJICE_LEMMATIZER_ANCHORS:
+      typeof __VEJICE_BUILD_LEMMATIZER_ANCHORS__ !== "undefined"
+        ? __VEJICE_BUILD_LEMMATIZER_ANCHORS__
+        : undefined,
+  };
+}
+
+function getRuntime(runtime = {}) {
+  const buildEnv = getBuildEnv();
+  const runtimeEnv =
+    runtime && typeof runtime === "object" && runtime.env
+      ? runtime.env
+      : typeof process !== "undefined" && process?.env
+        ? process.env
+        : {};
+  return {
+    // Explicit runtime values remain highest priority (for tests and controlled overrides).
+    env: { ...buildEnv, ...runtimeEnv },
     windowObject:
       runtime && typeof runtime === "object" && "windowObject" in runtime
         ? runtime.windowObject

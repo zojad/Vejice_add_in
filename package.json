@@ -7,11 +7,6 @@
     "url": "https://github.com/damjan-popic/Vejice_add_in.git"
   },
   "license": "MIT",
-  "config": {
-    "app_to_debug": "word",
-    "app_type_to_debug": "desktop",
-    "dev_server_port": 4001
-  },
   "scripts": {
     "build": "webpack --mode production",
     "build:dev": "webpack --mode development",
@@ -33,7 +28,7 @@
     "validate:prod": "office-addin-manifest validate docs/manifest.prod.xml",
     "validate:web:prod": "office-addin-manifest validate docs/manifest.web.prod.xml",
     "start:all": "npm-run-all -p dev-server start",
-    "test": "node --experimental-default-type=module --test tests/*.test.mjs",
+    "test": "node --test tests/*.test.mjs",
     "verify:internal": "npm test && npm run check:encoding && npm run build && npm run validate && npm run validate:web",
     "watch": "webpack --mode development --watch",
     "proxy:lemmas": "node proxy/lemmatizer-proxy.js",

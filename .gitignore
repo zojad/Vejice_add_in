@@ -5,3 +5,6 @@ dist/
 .DS_Store
 npm-debug.log*
 coverage/
+docs/*.hot-update.js
+docs/*.hot-update.js.map
+docs/*.hot-update.json

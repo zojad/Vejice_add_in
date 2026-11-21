@@ -121,6 +121,31 @@ module.exports = async (env, options) => {
         __VEJICE_BUILD_ONLINE_DRIFT_LOGS__: JSON.stringify(buildOnlineDriftLogs),
         __VEJICE_BUILD_DEBUG__: JSON.stringify(buildDebugLogs),
         __VEJICE_BUILD_DESKTOP_VERBOSE_LOGS__: JSON.stringify(buildDesktopVerboseLogs),
+        __VEJICE_BUILD_CORRECTION_PROVIDER__: JSON.stringify(
+          process.env.VEJICE_CORRECTION_PROVIDER || ""
+        ),
+        __VEJICE_BUILD_REMOTE_CORRECTION_TRUSTED__: JSON.stringify(
+          process.env.VEJICE_REMOTE_CORRECTION_TRUSTED || ""
+        ),
+        __VEJICE_BUILD_ALLOW_UNSAFE_REMOTE_API__: JSON.stringify(
+          process.env.VEJICE_ALLOW_UNSAFE_REMOTE_API || ""
+        ),
+        __VEJICE_BUILD_USE_MOCK__: JSON.stringify(process.env.VEJICE_USE_MOCK || ""),
+        __VEJICE_BUILD_LEMMATIZER_PROVIDER__: JSON.stringify(
+          process.env.VEJICE_LEMMATIZER_PROVIDER || ""
+        ),
+        __VEJICE_BUILD_REMOTE_LEMMATIZER_TRUSTED__: JSON.stringify(
+          process.env.VEJICE_REMOTE_LEMMATIZER_TRUSTED || ""
+        ),
+        __VEJICE_BUILD_ALLOW_UNSAFE_LEMMATIZER__: JSON.stringify(
+          process.env.VEJICE_ALLOW_UNSAFE_LEMMATIZER || ""
+        ),
+        __VEJICE_BUILD_USE_LEMMATIZER__: JSON.stringify(
+          process.env.VEJICE_USE_LEMMATIZER || ""
+        ),
+        __VEJICE_BUILD_LEMMATIZER_ANCHORS__: JSON.stringify(
+          process.env.VEJICE_LEMMATIZER_ANCHORS || ""
+        ),
         __VEJICE_BUILD_CHECK_RUN_WATCHDOG_MS__: JSON.stringify(
           process.env.VEJICE_CHECK_RUN_WATCHDOG_MS || ""
         ),
